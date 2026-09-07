@@ -250,6 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (errData.detail) errDetail = errData.detail;
                 } catch(e) {}
                 // Token expirado ou inválido — forçar re-login
+                if (response.status === 401) {
                     authToken = null;
                     localStorage.removeItem('clipmaker_token');
                     updateNav();
@@ -317,6 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 consecutiveFailures = 0; // reset on success
                 const data = await res.json();
                 
+                if (data.status === 'READY') {
                     clearInterval(pollingInterval);
                     percentageEl.innerText = "100%";
                     document.getElementById('processing-section').classList.add('hidden');
