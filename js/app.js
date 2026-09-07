@@ -177,12 +177,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    let isProcessing = false;
+
     async function startProcessingPipeline(fileOrUrl, isFile) {
+        if (isProcessing) return; // Previne múltiplos disparos
+        
         if (!authToken) {
             alert("Por favor, faça login ou cadastre-se para gerar clipes!");
             authModal.classList.remove('hidden');
             return;
         }
+
+        isProcessing = true;
+        
+        if (btnGenerateUrl) {
+            btnGenerateUrl.disabled = true;
+            btnGenerateUrl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
+        }
+        if (fileInput) fileInput.disabled = true;
+        if (btnBrowse) btnBrowse.disabled = true;
 
         const heroSection = document.getElementById('hero-section');
         const processingSection = document.getElementById('processing-section');
@@ -215,9 +228,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isFile) {
             formData.append("file", fileOrUrl);
             endpoint = `${API_BASE}/upload-and-process/`;
+            percentageEl.innerText = "Enviando arquivo pesado...";
         } else {
             formData.append("url", fileOrUrl);
             endpoint = `${API_BASE}/upload-url/`;
+            percentageEl.innerText = "Baixando vídeo (yt-dlp)...";
         }
 
         try {
@@ -235,7 +250,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (errData.detail) errDetail = errData.detail;
                 } catch(e) {}
                 // Token expirado ou inválido — forçar re-login
-                if (response.status === 401) {
                     authToken = null;
                     localStorage.removeItem('clipmaker_token');
                     updateNav();
@@ -243,6 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     authModal.classList.remove('hidden');
                     processingSection.classList.add('hidden');
                     heroSection.classList.remove('hidden');
+                    resetUIState();
                     return;
                 }
                 throw new Error(errDetail);
@@ -261,7 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
             alert("Erro: " + error.message);
             processingSection.classList.add('hidden');
             heroSection.classList.remove('hidden');
+            resetUIState();
         }
+    }
+
+    function resetUIState() {
+        isProcessing = false;
+        if (btnGenerateUrl) {
+            btnGenerateUrl.disabled = false;
+            btnGenerateUrl.innerHTML = 'Processar Link';
+        }
+        if (fileInput) fileInput.disabled = false;
+        if (btnBrowse) btnBrowse.disabled = false;
     }
 
     async function pollProjectStatus(projectId, sourceName) {
@@ -283,6 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         authModal.classList.remove('hidden');
                         document.getElementById('processing-section').classList.add('hidden');
                         document.getElementById('hero-section').classList.remove('hidden');
+                        resetUIState();
                         return;
                     }
                     throw new Error(`Falha ao checar status (${res.status})`);
@@ -290,18 +317,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 consecutiveFailures = 0; // reset on success
                 const data = await res.json();
                 
-                if (data.status === 'READY') {
                     clearInterval(pollingInterval);
                     percentageEl.innerText = "100%";
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('results-section').classList.remove('hidden');
                     document.querySelector('.source-name').innerText = sourceName;
                     UI.renderClips(data.clips);
+                    resetUIState();
                 } else if (data.status === 'FAILED') {
                     clearInterval(pollingInterval);
                     alert("Erro no processamento: " + (data.error || "Desconhecido"));
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('hero-section').classList.remove('hidden');
+                    resetUIState();
                 } else {
                     // Update UI lightly
                     if(percentageEl.innerText === "Na Fila...") percentageEl.innerText = "15%";
@@ -317,6 +345,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert("Conexão perdida com o servidor. O vídeo pode ainda estar processando.");
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('hero-section').classList.remove('hidden');
+                    resetUIState();
                 }
             }
         }, 3000);

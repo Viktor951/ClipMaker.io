@@ -11,11 +11,15 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from backend.services.auth_service import verify_password, get_password_hash, create_access_token, decode_access_token
 from backend.services.db_service import get_user_by_email, create_user_safe, create_project, get_project_with_clips
+from backend.services.video_service import get_video_info
 from backend.worker import process_video_task
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMP_DIR = os.path.join(BASE_DIR, "temp_videos")
-os.makedirs(TEMP_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent
+TEMP_DIR = BASE_DIR / "temp_videos"
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
+MAX_FILE_SIZE = 500 * 1024 * 1024 # 500 MB
+MAX_DURATION_SEC = 3600.0 # 1 hour
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="ClipMaker AI SaaS", version="3.0")
@@ -68,32 +72,52 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.post("/upload-and-process/")
 @limiter.limit("5/minute")
 async def process_video(request: Request, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    content_length = request.headers.get('content-length')
+    if content_length and int(content_length) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="Arquivo muito grande (Limite de 500MB).")
+
     safe_filename = f"{uuid.uuid4()}.mp4"
-    input_path = os.path.join(TEMP_DIR, safe_filename)
+    input_path = TEMP_DIR / safe_filename
 
     try:
-        contents = await file.read()
         with open(input_path, "wb") as buffer:
-            buffer.write(contents)
+            while chunk := await file.read(1024 * 1024): # Ler em chunks de 1MB
+                buffer.write(chunk)
+                if input_path.stat().st_size > MAX_FILE_SIZE:
+                    break
     except Exception as e:
+        if input_path.exists(): input_path.unlink()
         raise HTTPException(status_code=500, detail=f"Erro ao salvar arquivo: {str(e)}")
     finally:
         await file.close()
 
-    if os.path.getsize(input_path) == 0:
-        os.remove(input_path)
-        raise HTTPException(status_code=400, detail="Arquivo vazio.")
+    if input_path.exists() and input_path.stat().st_size > MAX_FILE_SIZE:
+        input_path.unlink()
+        raise HTTPException(status_code=400, detail="Arquivo muito grande (Limite de 500MB).")
+
+    if not input_path.exists() or input_path.stat().st_size == 0:
+        if input_path.exists(): input_path.unlink()
+        raise HTTPException(status_code=400, detail="Arquivo vazio ou inválido.")
+
+    try:
+        _, _, duration = get_video_info(str(input_path))
+        if duration > MAX_DURATION_SEC:
+            input_path.unlink()
+            raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 1 hora).")
+    except Exception as e:
+        input_path.unlink()
+        raise HTTPException(status_code=400, detail=f"Arquivo de vídeo inválido ou corrompido: {str(e)}")
 
     # Criar projeto no DB
     project_id = await create_project(
         user_id=current_user['id'], 
         title=file.filename, 
         source_file_key=safe_filename, 
-        duration_sec=0.0 # Will be updated by probe later
+        duration_sec=duration
     )
     
     # Enviar para a fila (Celery/Huey)
-    process_video_task(project_id, input_path, TEMP_DIR)
+    process_video_task(project_id, str(input_path), str(TEMP_DIR))
     
     return {"status": "processing", "project_id": project_id}
 
@@ -101,30 +125,64 @@ async def process_video(request: Request, file: UploadFile = File(...), current_
 @limiter.limit("5/minute")
 async def process_url(request: Request, url: str = Form(...), current_user: dict = Depends(get_current_user)):
     safe_filename = f"{uuid.uuid4()}.mp4"
-    input_path = os.path.join(TEMP_DIR, safe_filename)
+    input_path = TEMP_DIR / safe_filename
+    video_duration = 0.0
 
     try:
         import sys
-        result = subprocess.run(
-            [sys.executable, "-m", "yt_dlp", "--merge-output-format", "mp4", "-o", input_path, url],
-            capture_output=True, text=True, timeout=300
+        
+        # 1. Verificar a duração e disponibilidade antes de baixar
+        probe_result = subprocess.run(
+            [sys.executable, "-m", "yt_dlp", "--print", "duration", url],
+            capture_output=True, text=True, timeout=60
         )
+        if probe_result.returncode != 0:
+            raise HTTPException(status_code=400, detail="Não foi possível acessar o vídeo. Ele pode ser privado, inválido ou restrito.")
+            
+        try:
+            video_duration = float(probe_result.stdout.strip() or "0")
+            if video_duration > MAX_DURATION_SEC:
+                raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 1 hora).")
+        except ValueError:
+            pass 
+
+        # 2. Baixar o vídeo limitando a 1080p
+        download_cmd = [
+            sys.executable, "-m", "yt_dlp", 
+            "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "--merge-output-format", "mp4", 
+            "-o", str(input_path), 
+            url
+        ]
+        
+        result = subprocess.run(download_cmd, capture_output=True, text=True, timeout=600)
+        
         if result.returncode != 0:
-            raise Exception(f"yt-dlp error: {result.stderr}")
+            error_line = result.stderr.strip().splitlines()[-1] if result.stderr else "Desconhecido"
+            raise HTTPException(status_code=400, detail=f"Erro ao baixar o vídeo. {error_line}")
+            
+    except HTTPException:
+        if input_path.exists(): input_path.unlink()
+        raise
     except Exception as e:
+        if input_path.exists(): input_path.unlink()
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Erro download: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro inesperado: {str(e)}")
+
+    if not input_path.exists() or input_path.stat().st_size == 0:
+        if input_path.exists(): input_path.unlink()
+        raise HTTPException(status_code=400, detail="Falha ao baixar o arquivo (Arquivo vazio).")
 
     project_id = await create_project(
         user_id=current_user['id'], 
         title="Importação por URL", 
         source_file_key=safe_filename, 
-        duration_sec=0.0,
+        duration_sec=video_duration,
         source_url=url
     )
     
-    process_video_task(project_id, input_path, TEMP_DIR)
+    process_video_task(project_id, str(input_path), str(TEMP_DIR))
     
     return {"status": "processing", "project_id": project_id}
 
