@@ -320,6 +320,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (data.status === 'READY') {
                     clearInterval(pollingInterval);
+                    percentageEl.classList.remove('pulse-animation');
                     percentageEl.innerText = "100%";
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('results-section').classList.remove('hidden');
@@ -328,15 +329,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     resetUIState();
                 } else if (data.status === 'FAILED') {
                     clearInterval(pollingInterval);
+                    percentageEl.classList.remove('pulse-animation');
                     alert("Erro no processamento: " + (data.error || "Desconhecido"));
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('hero-section').classList.remove('hidden');
                     resetUIState();
                 } else {
                     // Update UI lightly
-                    if(percentageEl.innerText === "Na Fila...") percentageEl.innerText = "15%";
-                    else if (parseInt(percentageEl.innerText) < 95) {
-                        percentageEl.innerText = parseInt(percentageEl.innerText) + 5 + "%";
+                    percentageEl.classList.add('pulse-animation');
+                    
+                    if (data.status === 'TRANSCRIBING') {
+                        percentageEl.innerText = "🧠 Extraindo áudio e transcrevendo com IA...";
+                    } else if (data.status === 'ANALYZING') {
+                        percentageEl.innerText = "🔍 Procurando os melhores cortes...";
+                    } else if (data.status === 'RENDERING') {
+                        percentageEl.innerText = "✂️ Renderizando cortes no formato 9:16...";
+                    } else {
+                        if(percentageEl.innerText === "Na Fila...") percentageEl.innerText = "15%";
+                        else if (!isNaN(parseInt(percentageEl.innerText)) && parseInt(percentageEl.innerText) < 95) {
+                            percentageEl.innerText = parseInt(percentageEl.innerText) + 5 + "%";
+                        }
                     }
                 }
             } catch (err) {
@@ -344,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 consecutiveFailures++;
                 if (consecutiveFailures >= 5) {
                     clearInterval(pollingInterval);
+                    percentageEl.classList.remove('pulse-animation');
                     alert("Conexão perdida com o servidor. O vídeo pode ainda estar processando.");
                     document.getElementById('processing-section').classList.add('hidden');
                     document.getElementById('hero-section').classList.remove('hidden');

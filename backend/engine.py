@@ -17,7 +17,7 @@ def format_duration(seconds: float) -> str:
     s = int(seconds % 60)
     return f"{m:02d}:{s:02d}"
 
-def process_video_full_pipeline(input_path: str, temp_dir: str) -> list:
+def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None) -> list:
     """
     Pipeline completo otimizado:
     1. Probe do vídeo
@@ -41,15 +41,32 @@ def process_video_full_pipeline(input_path: str, temp_dir: str) -> list:
 
     # 2. Transcrição
     logger.info("Etapa 2/4: Transcrevendo áudio (Whisper)...")
+    if project_id:
+        import asyncio
+        from backend.services.db_service import update_project_status
+        asyncio.run(update_project_status(project_id, "TRANSCRIBING"))
+        
     segments = ai_service.transcribe_audio(input_path)
     logger.info(f"Transcrição finalizada: {len(segments)} segmentos obtidos.")
 
     # 3. Geração de boundaries
     logger.info("Etapa 3/4: Calculando melhores momentos...")
-    clip_boundaries = ai_service.generate_clip_boundaries(duration)
+    if project_id:
+        import asyncio
+        from backend.services.db_service import update_project_status
+        asyncio.run(update_project_status(project_id, "ANALYZING"))
+        
+    transcript_text = ai_service.format_transcript_from_segments(segments)
+    clip_boundaries = ai_service.get_viral_clips_from_llm(transcript_text, duration)
+
 
     # 4. Renderização
     logger.info(f"Etapa 4/4: Renderizando {len(clip_boundaries)} clipe(s)...")
+    if project_id and clip_boundaries:
+        import asyncio
+        from backend.services.db_service import update_project_status
+        asyncio.run(update_project_status(project_id, "RENDERING"))
+        
     generated_clips_ui = []
     
     for i, (start_sec, end_sec, title, hook) in enumerate(clip_boundaries):

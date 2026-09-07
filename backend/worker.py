@@ -22,7 +22,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str):
         from backend.engine import process_video_full_pipeline
         
         # Executa o pipeline de IA
-        clips = process_video_full_pipeline(input_path, temp_dir)
+        clips = process_video_full_pipeline(input_path, temp_dir, project_id)
         logger.info(f"Sucesso! Clipes gerados para {project_id}: {len(clips)}")
         
         # Salva no banco de dados

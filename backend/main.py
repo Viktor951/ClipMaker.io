@@ -18,8 +18,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 TEMP_DIR = BASE_DIR / "temp_videos"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
-MAX_FILE_SIZE = 500 * 1024 * 1024 # 500 MB
-MAX_DURATION_SEC = 3600.0 # 1 hour
+MAX_FILE_SIZE_MB = 2000
+MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_DURATION_SEC = 14400 # 4 hours
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="ClipMaker AI SaaS", version="3.0")
@@ -107,7 +108,7 @@ async def process_video(request: Request, file: UploadFile = File(...), current_
         _, _, duration = get_video_info(str(input_path))
         if duration > MAX_DURATION_SEC:
             input_path.unlink()
-            raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 1 hora).")
+            raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 4 horas).")
     except Exception as e:
         input_path.unlink()
         raise HTTPException(status_code=400, detail=f"Arquivo de vídeo inválido ou corrompido: {str(e)}")
@@ -146,7 +147,7 @@ async def process_url(request: Request, url: str = Form(...), current_user: dict
         try:
             video_duration = float(probe_result.stdout.strip() or "0")
             if video_duration > MAX_DURATION_SEC:
-                raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 1 hora).")
+                raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração (Máximo 4 horas).")
         except ValueError:
             pass 
 

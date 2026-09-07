@@ -38,22 +38,22 @@ def get_encoding_params() -> dict:
     if is_nvenc_available():
         return {
             "vcodec": "h264_nvenc",
-            "preset": "p4",
+            "preset": "p6", # Melhor qualidade que p4
             "rc": "vbr",
-            "cq": "23",
-            "b:v": "5M",
-            "maxrate": "8M",
+            "cq": "18",     # Menor é melhor (antes era 23)
+            "b:v": "8M",
+            "maxrate": "15M",
             "acodec": "aac",
-            "b:a": "128k",
+            "b:a": "256k",  # Áudio de alta qualidade
             "threads": "0",
         }
     else:
         return {
             "vcodec": "libx264",
-            "preset": "ultrafast",
-            "crf": "23",
+            "preset": "fast",   # Melhor compressão e qualidade que ultrafast
+            "crf": "18",        # Menor é melhor (antes era 23)
             "acodec": "aac",
-            "b:a": "128k",
+            "b:a": "256k",
             "threads": "4",
         }
 
@@ -214,10 +214,10 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
             if encoding_params.get("vcodec") == "h264_nvenc":
                 cpu_params = {
                     "vcodec": "libx264",
-                    "preset": "ultrafast",
-                    "crf": "23",
+                    "preset": "fast",
+                    "crf": "18",
                     "acodec": "aac",
-                    "b:a": "128k",
+                    "b:a": "256k",
                     "threads": "4",
                 }
                 fallback_cmd = [
