@@ -1,0 +1,83 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-py"
+  interface = "asyncio"
+  output = "../backend/prisma_client"
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  credits       Int       @default(60)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  projects      Project[]
+
+  @@map("users")
+}
+
+model Project {
+  id             String         @id @default(uuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  sourceUrl      String?
+  sourceFileKey  String
+  durationSec    Float
+  status         String         @default("PENDING")
+  errorMessage   String?
+  
+  transcription  Transcription?
+  clips          Clip[]
+
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([userId])
+  @@map("projects")
+}
+
+model Transcription {
+  id          String   @id @default(uuid())
+  projectId   String   @unique
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fullText    String
+  language    String   @default("pt")
+  wordsJson   String
+  createdAt   DateTime @default(now())
+
+  @@map("transcriptions")
+}
+
+model Clip {
+  id              String      @id @default(uuid())
+  projectId       String
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  title           String
+  hookReason      String
+  startTime       Float
+  endTime         Float
+  durationSec     Float
+  
+  viralScore      Int
+  aspectRatio     String      @default("9:16")
+  
+  renderedUrl     String?
+  status          String      @default("QUEUED")
+  errorMessage    String?
+  
+  captionConfig   String?
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([projectId])
+  @@map("clips")
+}

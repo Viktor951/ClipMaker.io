@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipMaker AI - Gere Clipes Virais em Segundos</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;700;800&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="css/components.css">
+</head>
+<body>
+    <div class="background-effects">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+    </div>
+
+    <nav class="navbar">
+        <div class="container nav-content">
+            <a href="#" class="logo">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                ClipMaker<span>AI</span>
+            </a>
+            <div class="nav-links">
+                <a href="#">Preços</a>
+                <a href="#">Exemplos</a>
+                <a href="#" class="btn-primary-outline" id="btn-login-nav">Login</a>
+                <a href="#" class="btn-primary" id="btn-register-nav">Testar Grátis</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Hero Section -->
+        <section class="hero" id="hero-section">
+            <span class="badge">Novo motor de IA V2.0 🚀</span>
+            <h1 class="hero-title">Transforme vídeos longos em <br> <span class="gradient-text">clipes virais</span> com um clique.</h1>
+            <p class="hero-subtitle">Nossa IA analisa seu vídeo, encontra os melhores momentos, corta e adiciona legendas dinâmicas automaticamente. Perfeito para TikTok, Reels e Shorts.</p>
+            
+            <div class="upload-container glass-panel">
+                <div class="upload-tabs">
+                    <button class="tab-btn active" data-tab="url"><i class="fa-solid fa-link"></i> Colar URL</button>
+                    <button class="tab-btn" data-tab="file"><i class="fa-solid fa-upload"></i> Upload Arquivo</button>
+                </div>
+                
+                <div class="tab-content active" id="tab-url">
+                    <div class="input-group">
+                        <i class="fa-brands fa-youtube input-icon"></i>
+                        <input type="text" id="video-url" placeholder="Cole o link do YouTube, Twitch ou Vimeo..." autocomplete="off">
+                        <button class="btn-generate" id="btn-generate-url">
+                            Gerar Clipes <i class="fa-solid fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="tab-file">
+                    <div class="drop-zone" id="drop-zone">
+                        <div class="drop-icon">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <h3>Arraste e solte seu vídeo aqui</h3>
+                        <p>MP4, MOV ou WEBM (Max 5GB)</p>
+                        <button class="btn-secondary" id="btn-browse">Procurar Arquivo</button>
+                        <input type="file" id="file-input" hidden accept="video/mp4,video/quicktime,video/webm">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="trusted-by">
+                <p>Usado por mais de 50.000 criadores</p>
+                <div class="logos">
+                    <!-- Logos simuladas -->
+                    <i class="fa-brands fa-tiktok"></i>
+                    <i class="fa-brands fa-instagram"></i>
+                    <i class="fa-brands fa-youtube"></i>
+                    <i class="fa-brands fa-twitch"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- Processing Section (Hidden by default) -->
+        <section class="processing hidden" id="processing-section">
+            <div class="processing-content glass-panel">
+                <div class="loader-circle">
+                    <svg viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="45"></circle>
+                        <circle cx="50" cy="50" r="45" class="progress"></circle>
+                    </svg>
+                    <div class="percentage" id="processing-percentage">0%</div>
+                </div>
+                <h2 class="processing-title">Analisando o vídeo...</h2>
+                <div class="processing-steps">
+                    <div class="step active" id="step-1"><i class="fa-solid fa-check"></i> Baixando mídia</div>
+                    <div class="step" id="step-2"><i class="fa-solid fa-spinner fa-spin"></i> Transcrevendo áudio</div>
+                    <div class="step pending" id="step-3"><i class="fa-solid fa-circle"></i> Detectando momentos virais</div>
+                    <div class="step pending" id="step-4"><i class="fa-solid fa-circle"></i> Renderizando legendas</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dashboard / Results Section (Hidden by default) -->
+        <section class="results hidden" id="results-section">
+            <div class="results-header">
+                <div class="video-info">
+                    <div class="video-thumbnail">
+                        <i class="fa-solid fa-video"></i>
+                    </div>
+                    <div>
+                        <h2>Clipes Gerados</h2>
+                        <p class="source-name">Podcast Episódio #42.mp4</p>
+                    </div>
+                </div>
+                <button class="btn-secondary btn-sm" id="btn-new-video"><i class="fa-solid fa-plus"></i> Novo Vídeo</button>
+            </div>
+            
+            <div class="clips-grid" id="clips-container">
+                <!-- Clipes injetados via JS -->
+            </div>
+        </section>
+        
+        <!-- Editor Modal (Hidden by default) -->
+        <div class="modal hidden" id="editor-modal">
+            <div class="modal-content glass-panel">
+                <div class="modal-header">
+                    <h3>Editor de Clipe</h3>
+                    <button class="btn-close" id="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-body">
+                    <div class="editor-layout">
+                        <div class="video-preview-container">
+                            <div class="video-player-mock">
+                                <i class="fa-solid fa-play play-icon"></i>
+                                <div class="mock-captions">Eu adoro programar <span>IA</span></div>
+                            </div>
+                            <div class="player-controls">
+                                <button><i class="fa-solid fa-play"></i></button>
+                                <div class="timeline">
+                                    <div class="timeline-progress"></div>
+                                </div>
+                                <span>00:00 / 00:45</span>
+                            </div>
+                        </div>
+                        <div class="transcript-editor">
+                            <h4>Transcrição <span class="badge sm">Editar</span></h4>
+                            <div class="transcript-text" id="transcript-container">
+                                <!-- Palavras injetadas via JS -->
+                            </div>
+                            <div class="editor-actions">
+                                <button class="btn-secondary block"><i class="fa-solid fa-wand-sparkles"></i> Estilo das Legendas</button>
+                                <button class="btn-primary block"><i class="fa-solid fa-download"></i> Exportar 1080p</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Auth Modal -->
+        <div class="modal hidden" id="auth-modal">
+            <div class="modal-content glass-panel" style="max-width: 400px; margin: 10vh auto;">
+                <div class="modal-header">
+                    <h3 id="auth-title">Entrar</h3>
+                    <button class="btn-close" id="btn-close-auth"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
+                        <input type="email" id="auth-email" placeholder="Seu email" required class="input-group" style="padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); color: white;">
+                        <input type="password" id="auth-password" placeholder="Sua senha" required class="input-group" style="padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); color: white;">
+                        <button type="submit" class="btn-primary block" id="btn-submit-auth">Entrar</button>
+                    </form>
+                    <p style="text-align: center; margin-top: 15px; font-size: 0.9em;">
+                        <a href="#" id="auth-toggle-mode" style="color: #a78bfa;">Não tem uma conta? Cadastre-se</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="js/mockData.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
