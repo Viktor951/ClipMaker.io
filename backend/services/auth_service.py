@@ -1,8 +1,9 @@
+import os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = "sua_chave_secreta_super_segura_aqui"  # Em prod, usar variável de ambiente
+SECRET_KEY = os.getenv("SECRET_KEY", "sua_chave_secreta_super_segura_aqui_para_dev")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 
