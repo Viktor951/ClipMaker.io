@@ -138,7 +138,7 @@ async def process_url(request: Request, url: str = Form(...), current_user: dict
         
         # 1. Verificar a duração e disponibilidade antes de baixar
         probe_result = subprocess.run(
-            [sys.executable, "-m", "yt_dlp", "--print", "duration", url],
+            [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--print", "duration", url],
             capture_output=True, text=True, timeout=60
         )
         if probe_result.returncode != 0:
@@ -154,6 +154,7 @@ async def process_url(request: Request, url: str = Form(...), current_user: dict
         # 2. Baixar o vídeo limitando a 1080p
         download_cmd = [
             sys.executable, "-m", "yt_dlp", 
+            "--force-ipv4",
             "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4", 
             "-o", str(input_path), 

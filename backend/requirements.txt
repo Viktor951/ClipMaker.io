@@ -1,11 +1,26 @@
+# === Framework Web ===
 fastapi>=0.104.0
 uvicorn>=0.24.0
 python-multipart>=0.0.6
+pydantic>=2.0.0
+
+# === Processamento de Vídeo ===
 ffmpeg-python>=0.2.0
 opencv-python>=4.8.0
 numpy>=1.24.0
-faster-whisper>=0.10.0
 yt-dlp>=2023.11.16
-pydantic>=2.0.0
-google-generativeai
-python-dotenv
+
+# === IA / Transcrição ===
+faster-whisper>=0.10.0
+google-generativeai>=0.8.0
+
+# === Fila de Tarefas ===
+huey>=2.5.0
+
+# === Autenticação ===
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+aiosqlite>=0.19.0
+
+# === Configuração ===
+python-dotenv>=1.0.0

@@ -8,6 +8,10 @@ import google.generativeai as genai
 
 load_dotenv()
 
+TARGET_CLIPS_COUNT = 5
+MIN_DURATION_SEC = 60
+MAX_DURATION_SEC = 90
+
 logger = logging.getLogger("clipmaker.ai")
 logger.setLevel(logging.DEBUG)
 if not logger.handlers:
@@ -55,7 +59,6 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
             vad_parameters=dict(min_silence_duration_ms=500)
         )
         
-        # Consumir o generator para uma lista enquanto o modelo está na memória
         segments = list(segments_gen)
         elapsed = time.time() - t0
         logger.info(f"Transcrição concluída em {elapsed:.1f}s ({len(segments)} segmentos)")
@@ -63,7 +66,6 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
     except Exception as e:
         logger.error(f"FALHA na transcrição Whisper: {str(e)}", exc_info=True)
     finally:
-        # LIMPEZA DE VRAM ESTRITA
         if model is not None:
             del model
         gc.collect()
@@ -93,23 +95,22 @@ def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "COLOQUE_SUA_CHAVE_AQUI":
         logger.error("A chave GEMINI_API_KEY não foi encontrada no arquivo .env!")
-        # Fallback de segurança para não quebrar a aplicação caso a chave falte
         return _fallback_clip_boundaries(duration)
-        
+    
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""Você é um Produtor Sênior de Vídeos Virais para TikTok, Reels e Shorts (como o OpusClip).
-Sua missão é analisar a transcrição de um vídeo e extrair de 4 a 6 clipes ALTAMENTE VIRAIS.
+Sua missão é analisar a transcrição de um vídeo e extrair EXATAMENTE {TARGET_CLIPS_COUNT} clipes ALTAMENTE VIRAIS.
 
 REGRAS RÍGIDAS:
-1. Cada clipe deve ter sentido semântico completo (narrativa com início, meio e fim).
-2. A duração matemática (end_time - start_time) de cada clipe deve ser ESTRITAMENTE entre 60 e 90 segundos.
-3. O 'start_time' deve iniciar imediatamente onde uma fala forte começa.
-4. O 'end_time' deve ser após a conclusão do raciocínio.
-5. Selecione ganchos incrivelmente chamativos para a primeira frase ('hook_text').
-6. Retorne puramente um array de objetos JSON, sem formatação Markdown ao redor do JSON (nada de ```json).
-7. Se o vídeo inteiro for menor que 60 segundos, retorne apenas 1 clipe do início ao fim.
+1. Você deve retornar ESTRITAMENTE entre 4 e 6 cortes.
+2. A duração matemática (end_time - start_time) de CADA clipe deve ser de no mínimo {MIN_DURATION_SEC} segundos e no máximo {MAX_DURATION_SEC} segundos. 
+3. Priorize frases completas e raciocínios que façam sentido isoladamente (começo, meio e fim).
+4. O 'start_time' deve iniciar imediatamente onde uma fala forte começa.
+5. O 'end_time' deve ser após a conclusão do raciocínio.
+6. Selecione ganchos incrivelmente chamativos para a primeira frase ('hook_text').
+7. Retorne puramente um array de objetos JSON, sem formatação Markdown (nada de ```json).
+8. Se o vídeo inteiro for muito curto, retorne o que for possível dentro das regras.
 
 O esquema JSON OBRIGATÓRIO por item:
 {{
@@ -124,43 +125,75 @@ TRANSCRIÇÃO DO VÍDEO:
 {transcript_text}
 """
     
-    try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
-                response_mime_type="application/json"
-            )
-        )
-        
-        clips = json.loads(response.text)
-        
-        # Converter para o formato (start, end, title, hook) esperado pelo engine
-        clip_boundaries = []
-        for c in clips:
-            st = float(c.get("start_time", 0.0))
-            en = float(c.get("end_time", duration))
-            ti = c.get("title", "Clipe Viral")
-            ho = c.get("hook_text", "")
-            clip_boundaries.append((st, en, ti, ho))
-            
-        logger.info(f"{len(clip_boundaries)} clipe(s) retornado(s) pelo LLM.")
-        return clip_boundaries
-        
-    except Exception as e:
-        logger.error(f"Erro ao processar LLM: {str(e)}")
-        return _fallback_clip_boundaries(duration)
+    # Tentar vários modelos em sequência caso um esteja indisponível
+    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+    
+    for model_name in models_to_try:
+        for attempt in range(3):  # Até 3 tentativas por modelo
+            try:
+                logger.info(f"Tentativa {attempt+1} com modelo: {model_name}")
+                model = genai.GenerativeModel(model_name)
+                
+                response = model.generate_content(
+                    prompt,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json"
+                    )
+                )
+                
+                raw_json = response.text
+                print(f"\n=== RESPOSTA DO GEMINI ({model_name}) ===")
+                print(raw_json[:500])
+                print("=================================\n")
+                
+                clips = json.loads(raw_json)
+                
+                clip_boundaries = []
+                for c in clips:
+                    st = float(c.get("start_time", 0.0))
+                    en = float(c.get("end_time", duration))
+                    ti = c.get("title", "Clipe Viral")
+                    ho = c.get("hook_text", "")
+                    clip_boundaries.append((st, en, ti, ho))
+                    
+                logger.info(f"{len(clip_boundaries)} clipe(s) retornado(s) pelo LLM ({model_name}).")
+                return clip_boundaries
+                
+            except Exception as e:
+                err_str = str(e)
+                logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
+                
+                # Se for 503 (sobrecarga), esperar e tentar novamente
+                if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
+                    wait_time = (attempt + 1) * 10
+                    logger.info(f"API sobrecarregada. Aguardando {wait_time}s antes de nova tentativa...")
+                    time.sleep(wait_time)
+                    continue
+                
+                # Se for 404 (modelo não encontrado), tentar próximo modelo
+                if "404" in err_str or "NOT_FOUND" in err_str:
+                    logger.warning(f"Modelo {model_name} não disponível. Tentando próximo...")
+                    break
+                    
+                # Outro erro: aguardar e tentar novamente
+                time.sleep(5)
+    
+    # Todos os modelos falharam: usar fallback
+    logger.error("Todos os modelos Gemini falharam. Usando fallback matemático.")
+    return _fallback_clip_boundaries(duration)
 
 def _fallback_clip_boundaries(duration: float) -> list:
     """Fallback matemático caso a API do Gemini falhe."""
+    logger.warning("Usando fallback matemático para gerar cortes.")
     clip_boundaries = []
-    clip_duration = 75.0 
+    clip_duration = 75.0
     if duration <= clip_duration:
-        clip_boundaries.append((0.0, duration, "Clipe Inicial", "Gancho padrão"))
+        clip_boundaries.append((0.0, duration, "Clipe Completo", "Gancho inicial"))
     else:
         num_clips = min(int(duration // clip_duration) or 1, 6)
         step = (duration - clip_duration) / max(1, num_clips - 1) if num_clips > 1 else 0
         for i in range(num_clips):
             start = i * step
             end = min(start + clip_duration, duration)
-            clip_boundaries.append((start, end, f"Momento {i+1}", "Análise primária"))
+            clip_boundaries.append((start, end, f"Momento {i+1}", "Trecho relevante"))
     return clip_boundaries
