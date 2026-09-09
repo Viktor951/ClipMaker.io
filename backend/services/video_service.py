@@ -38,9 +38,9 @@ def get_encoding_params() -> dict:
     if is_nvenc_available():
         return {
             "vcodec": "h264_nvenc",
-            "preset": "p6", # Melhor qualidade que p4
+            "preset": "p4", # Reduzido de p6 para p4: equilíbrio muito melhor entre velocidade/qualidade
             "rc": "vbr",
-            "cq": "18",     # Menor é melhor (antes era 23)
+            "cq": "21",     # Reduzido de 18 para 21: imperceptível a olho nu, muito mais rápido
             "b:v": "8M",
             "maxrate": "15M",
             "acodec": "aac",
@@ -50,8 +50,8 @@ def get_encoding_params() -> dict:
     else:
         return {
             "vcodec": "libx264",
-            "preset": "fast",   # Melhor compressão e qualidade que ultrafast
-            "crf": "18",        # Menor é melhor (antes era 23)
+            "preset": "veryfast",   # Reduzido de fast para veryfast: bem mais rápido
+            "crf": "21",        # Reduzido de 18 para 21
             "acodec": "aac",
             "b:a": "256k",
             "threads": "4",
@@ -74,24 +74,42 @@ def get_video_info(input_path: str) -> tuple:
     return int(video_stream["width"]), int(video_stream["height"]), duration
 
 def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: float, alpha: float = 0.15, max_frames: int = 300) -> int:
-    logger.info(f"Face tracking: {start_sec:.1f}s -> {end_sec:.1f}s (max {max_frames} frames)")
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logger.warning("Não foi possível abrir o vídeo para face tracking. Usando centro padrão.")
-        return 960
-
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    start_frame = int(start_sec * fps)
-    end_frame = min(int(end_sec * fps), start_frame + max_frames)
-    total_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-    current_center_x = total_width // 2
+    import tempfile
+    import subprocess
+    logger.info(f"Face tracking: extraindo sub-clipe temporário {start_sec:.1f}s -> {end_sec:.1f}s para evitar seeks lentos...")
+    
+    # Criar arquivo temporário para o sub-clipe
+    fd, temp_clip_path = tempfile.mkstemp(suffix=".mp4")
+    os.close(fd)
+    
+    current_center_x = 960 # Fallback default
     smoothed_center_x = float(current_center_x)
     frames_processed = 0
     faces_found = 0
 
     try:
+        # Extrair clipe sem re-encode (muito rápido)
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", 
+            "-ss", str(start_sec), "-to", str(end_sec),
+            "-i", video_path, "-c", "copy", temp_clip_path
+        ]
+        subprocess.run(cmd, capture_output=True)
+        
+        cap = cv2.VideoCapture(temp_clip_path)
+        if not cap.isOpened():
+            logger.warning("Não foi possível abrir o vídeo temporário para face tracking. Usando centro padrão.")
+            return 960
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        # No clipe extraído, começamos do frame 0
+        start_frame = 0
+        end_frame = min(int((end_sec - start_sec) * fps), max_frames)
+        total_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        
+        current_center_x = total_width // 2
+        smoothed_center_x = float(current_center_x)
+
         cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
         if os.path.exists(cascade_path):
             face_cascade = cv2.CascadeClassifier(cascade_path)
@@ -115,7 +133,13 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
     except Exception as e:
         logger.warning(f"Erro no face tracking: {e}")
     finally:
-        cap.release()
+        if 'cap' in locals() and cap is not None:
+            cap.release()
+        if os.path.exists(temp_clip_path):
+            try:
+                os.remove(temp_clip_path)
+            except:
+                pass
 
     logger.info(f"Face tracking concluído: {frames_processed} frames, {faces_found} detecções.")
     return int(smoothed_center_x)

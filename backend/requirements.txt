@@ -24,3 +24,7 @@ aiosqlite>=0.19.0
 
 # === ConfiguraÃ§Ã£o ===
 python-dotenv>=1.0.0
+
+# === Migração Postgres e Redis ===
+asyncpg>=0.29.0
+redis>=5.0.0

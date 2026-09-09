@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: clipmaker_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: always
+
+  api:
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:password@db:5432/clipmaker_db
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  worker:
+    build: .
+    command: python huey_consumer.py backend.worker.huey -w 1
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:password@db:5432/clipmaker_db
+      - REDIS_URL=redis://redis:6379/0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      - db
+      - redis
+      - api
+    restart: always
+
+volumes:
+  postgres_data:

@@ -27,10 +27,10 @@ def _detect_device():
             logger.info(f"GPU detectada: {torch.cuda.get_device_name(0)}")
             return "cuda", "float16"
         else:
-            logger.warning("CUDA não disponível. Usando CPU (mais lento).")
+            logger.warning("⚠️ Rodando Whisper em CPU — isso pode ser MUITO mais lento. Verifique se o CUDA/torch com GPU está instalado corretamente.")
             return "cpu", "int8"
     except ImportError:
-        logger.warning("PyTorch não instalado. Usando CPU (mais lento).")
+        logger.warning("⚠️ Rodando Whisper em CPU (PyTorch não instalado) — isso pode ser MUITO mais lento. Verifique se o CUDA/torch com GPU está instalado corretamente.")
         return "cpu", "int8"
 
 def transcribe_audio(input_path: str, language: str = "pt") -> list:
@@ -65,6 +65,7 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
         
     except Exception as e:
         logger.error(f"FALHA na transcrição Whisper: {str(e)}", exc_info=True)
+        raise RuntimeError(f"FALHA na transcrição Whisper: {str(e)}")
     finally:
         if model is not None:
             del model
@@ -126,7 +127,7 @@ TRANSCRIÇÃO DO VÍDEO:
 """
     
     # Tentar vários modelos em sequência caso um esteja indisponível
-    models_to_try = ["gemini-3.6-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
     
     for model_name in models_to_try:
         for attempt in range(3):  # Até 3 tentativas por modelo

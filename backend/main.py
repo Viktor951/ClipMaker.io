@@ -79,7 +79,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 async def process_video(request: Request, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     content_length = request.headers.get('content-length')
     if content_length and int(content_length) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="Arquivo muito grande (Limite de 500MB).")
+        raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {MAX_FILE_SIZE_MB}MB).")
 
     safe_filename = f"{uuid.uuid4()}.mp4"
     input_path = TEMP_DIR / safe_filename
@@ -98,7 +98,7 @@ async def process_video(request: Request, file: UploadFile = File(...), current_
 
     if input_path.exists() and input_path.stat().st_size > MAX_FILE_SIZE:
         input_path.unlink()
-        raise HTTPException(status_code=400, detail="Arquivo muito grande (Limite de 500MB).")
+        raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {MAX_FILE_SIZE_MB}MB).")
 
     if not input_path.exists() or input_path.stat().st_size == 0:
         if input_path.exists(): input_path.unlink()

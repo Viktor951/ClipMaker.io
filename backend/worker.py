@@ -1,7 +1,10 @@
-from huey import SqliteHuey
+from huey import RedisHuey
 import os
 import logging
 import traceback
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Configurar logging para ser visível no Huey consumer
 logging.basicConfig(
@@ -10,8 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("clipmaker.worker")
 
-# Configura a fila usando SQLite (funciona perfeitamente no Windows)
-huey = SqliteHuey(filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'huey_queue.db'))
+# Configura a fila usando Redis (ideal para produção via Docker Compose)
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+huey = RedisHuey('clipmaker_tasks', url=redis_url)
 
 @huey.task()
 def process_video_task(project_id: str, input_path: str, temp_dir: str):
