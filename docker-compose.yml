@@ -4,9 +4,9 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: clipmaker_db
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-clipmaker_db}
     ports:
       - "5432:5432"
     volumes:
@@ -28,8 +28,8 @@ services:
       - .:/app
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://postgres:password@db:5432/clipmaker_db
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@db:5432/clipmaker_db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - db
@@ -43,8 +43,8 @@ services:
       - .:/app
     environment:
       - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql://postgres:password@db:5432/clipmaker_db
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:password@db:5432/clipmaker_db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
       - db

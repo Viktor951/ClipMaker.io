@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
-SECRET_KEY = os.getenv("SECRET_KEY", "sua_chave_secreta_super_segura_aqui_para_dev")
+SECRET_KEY = os.getenv("SECRET_KEY", "chave_secreta_padrao_apenas_para_desenvolvimento")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 
