@@ -23,7 +23,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str):
     logger.info(f"Input: {input_path}")
     try:
         # Import local para evitar problemas de dependência circular
-        from backend.engine import process_video_full_pipeline
+        from backend.app.services.engine_service import process_video_full_pipeline
         
         # Executa o pipeline de IA
         clips = process_video_full_pipeline(input_path, temp_dir, project_id)
@@ -31,7 +31,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str):
         
         # Salva no banco de dados
         import asyncio
-        from backend.services.db_service import save_project_results
+        from backend.app.db.db_service import save_project_results
         asyncio.run(save_project_results(project_id, clips))
         logger.info(f"Resultados salvos no banco para {project_id}")
         
@@ -41,7 +41,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str):
         
         # Atualiza o status do projeto para FAILED no banco
         import asyncio
-        from backend.services.db_service import update_project_status
+        from backend.app.db.db_service import update_project_status
         asyncio.run(update_project_status(project_id, "FAILED", str(e)))
         logger.info(f"Status do projeto {project_id} atualizado para FAILED")
         

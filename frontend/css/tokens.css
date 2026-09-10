@@ -1,0 +1,54 @@
+/* ═══════════════════════════════════════════════
+   ClipMakerAI — Design Tokens
+   Precision Dark Theme
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* ── Surfaces ── */
+  --surface-0: #08090C;
+  --surface-1: #0F1117;
+  --surface-2: #161920;
+  --surface-3: #1E2028;
+
+  /* ── Text ── */
+  --text-100: #F0F0F3;
+  --text-200: #A0A4B0;
+  --text-300: #5C5F6E;
+
+  /* ── Accents ── */
+  --accent-ai: #A8FF60;
+  --accent-hot: #FF6B6B;
+  --accent-cool: #6BE0FF;
+  --accent-warn: #FFB84D;
+
+  /* ── Borders ── */
+  --border-subtle: rgba(255,255,255, 0.06);
+  --border-hover: rgba(255,255,255, 0.12);
+  --border-active: rgba(168,255,96, 0.40);
+
+  /* ── Typography ── */
+  --font-display: 'Satoshi', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* ── Radii ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+  --shadow-glow-ai: 0 0 24px rgba(168,255,96, 0.12);
+  --shadow-glow-hot: 0 0 24px rgba(255,107,107, 0.12);
+
+  /* ── Transitions ── */
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-bounce: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+}

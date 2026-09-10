@@ -24,7 +24,11 @@ node_modules/
 
 # === Temp do backend ===
 backend/temp_videos/
-
+backend/temp/
+*.db-shm
+*.db-wal
+*.mp4
+*.m4a
 # === IDE ===
 .vscode/
 .idea/

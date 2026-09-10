@@ -3,13 +3,11 @@ import asyncpg
 import os
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'backend', '.env'))
-
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/clipmaker_db")
+from backend.app.core.config import settings
 
 async def init_db():
-    print(f"Conectando ao banco de dados: {DB_URL}")
-    conn = await asyncpg.connect(DB_URL)
+    print(f"Conectando ao banco de dados: {settings.DATABASE_URL}")
+    conn = await asyncpg.connect(settings.DATABASE_URL)
     
     try:
         await conn.execute('''

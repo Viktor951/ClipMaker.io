@@ -21,7 +21,7 @@ services:
 
   api:
     build: .
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     volumes:
@@ -36,9 +36,20 @@ services:
       - redis
     restart: always
 
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - api
+    restart: always
+
   worker:
     build: .
-    command: python huey_consumer.py backend.worker.huey -w 1
+    command: huey_consumer backend.app.worker.worker.huey -w 1
     volumes:
       - .:/app
     environment:

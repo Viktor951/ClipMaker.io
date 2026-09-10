@@ -1,7 +1,7 @@
 // Main application logic and orchestrator
 document.addEventListener('DOMContentLoaded', () => {
 
-    const API_BASE = 'http://localhost:8000';
+    const API_BASE = '/api/v1';
     let authToken = localStorage.getItem('clipmaker_token') || null;
 
     // --- Auth UI Logic ---
@@ -227,11 +227,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let endpoint = "";
         if (isFile) {
             formData.append("file", fileOrUrl);
-            endpoint = `${API_BASE}/upload-and-process/`;
+            endpoint = `${API_BASE}/video/upload-and-process/`;
             percentageEl.innerText = "Enviando arquivo pesado...";
         } else {
             formData.append("url", fileOrUrl);
-            endpoint = `${API_BASE}/upload-url/`;
+            endpoint = `${API_BASE}/video/upload-url/`;
             percentageEl.innerText = "Baixando vídeo (yt-dlp)...";
         }
 
@@ -296,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
         let consecutiveFailures = 0;
         let pollingInterval = setInterval(async () => {
             try {
-                const res = await fetch(`${API_BASE}/project/${projectId}/status`, {
+                const res = await fetch(`${API_BASE}/project/${projectId}/status?_t=${Date.now()}`, {
                     headers: { "Authorization": `Bearer ${authToken}` }
                 });
                 

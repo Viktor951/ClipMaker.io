@@ -3,81 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClipMaker AI - Gere Clipes Virais em Segundos</title>
+    <title>ClipMaker AI — Transforme vídeos longos em cortes virais</title>
+    <meta name="description" content="IA que analisa seu vídeo, encontra os melhores momentos, corta e adiciona legendas dinâmicas. Perfeito para TikTok, Reels e Shorts.">
     
-    <!-- Google Fonts -->
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://api.fontshare.com/v2/css?f[]=satoshi@800,700,500&display=swap" rel="stylesheet">
     
-    <!-- FontAwesome Icons -->
+    <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- Custom CSS -->
-    <link rel="stylesheet" href="css/styles.css">
+    <!-- Stylesheets (order matters) -->
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/reset.css">
+    <link rel="stylesheet" href="css/animations.css">
+    <link rel="stylesheet" href="css/layout.css">
     <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/responsive.css">
 </head>
 <body>
-    <div class="background-effects">
-        <div class="glow-orb orb-1"></div>
-        <div class="glow-orb orb-2"></div>
-    </div>
 
+    <!-- ═══════════ NAVBAR ═══════════ -->
     <nav class="navbar">
         <div class="container nav-content">
             <a href="#" class="logo">
-                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                ClipMaker<span>AI</span>
+                <div class="logo-icon">C</div>
+                ClipMaker<span class="ai">AI</span>
             </a>
             <div class="nav-links">
+                <a href="#">Recursos</a>
                 <a href="#">Preços</a>
-                <a href="#">Exemplos</a>
                 <a href="#" class="btn-primary-outline" id="btn-login-nav">Login</a>
-                <a href="#" class="btn-primary" id="btn-register-nav">Testar Grátis</a>
+                <a href="#" class="btn-primary btn-sm" id="btn-register-nav">Começar grátis</a>
             </div>
         </div>
     </nav>
 
     <main class="container">
-        <!-- Hero Section -->
+
+        <!-- ═══════════ HERO ═══════════ -->
         <section class="hero" id="hero-section">
-            <span class="badge">Novo motor de IA V2.0 🚀</span>
-            <h1 class="hero-title">Transforme vídeos longos em <br> <span class="gradient-text">clipes virais</span> com um clique.</h1>
-            <p class="hero-subtitle">Nossa IA analisa seu vídeo, encontra os melhores momentos, corta e adiciona legendas dinâmicas automaticamente. Perfeito para TikTok, Reels e Shorts.</p>
-            
-            <div class="upload-container glass-panel">
+            <h1 class="hero-title">
+                De um vídeo longo para<br>
+                cortes que <span class="highlight">viralizam.</span>
+            </h1>
+
+            <p class="hero-subtitle">
+                Cole o link. A IA transcreve, encontra os ganchos, recorta em 9:16 e adiciona legendas animadas. Sem editar. Sem pensar.
+            </p>
+
+            <!-- Upload Container -->
+            <div class="upload-container">
                 <div class="upload-tabs">
-                    <button class="tab-btn active" data-tab="url"><i class="fa-solid fa-link"></i> Colar URL</button>
-                    <button class="tab-btn" data-tab="file"><i class="fa-solid fa-upload"></i> Upload Arquivo</button>
+                    <button class="tab-btn active" data-tab="url">
+                        <i class="fa-solid fa-link"></i> Colar URL
+                    </button>
+                    <button class="tab-btn" data-tab="file">
+                        <i class="fa-solid fa-arrow-up-from-bracket"></i> Upload
+                    </button>
                 </div>
-                
+
                 <div class="tab-content active" id="tab-url">
                     <div class="input-group">
                         <i class="fa-brands fa-youtube input-icon"></i>
-                        <input type="text" id="video-url" placeholder="Cole o link do YouTube, Twitch ou Vimeo..." autocomplete="off">
+                        <input type="text" id="video-url" placeholder="Cole o link do YouTube, Twitch ou podcast..." autocomplete="off">
                         <button class="btn-generate" id="btn-generate-url">
                             Gerar Clipes <i class="fa-solid fa-arrow-right"></i>
                         </button>
                     </div>
                 </div>
-                
+
                 <div class="tab-content" id="tab-file">
                     <div class="drop-zone" id="drop-zone">
                         <div class="drop-icon">
                             <i class="fa-solid fa-cloud-arrow-up"></i>
                         </div>
                         <h3>Arraste e solte seu vídeo aqui</h3>
-                        <p>MP4, MOV ou WEBM (Max 5GB)</p>
-                        <button class="btn-secondary" id="btn-browse">Procurar Arquivo</button>
+                        <p>MP4, MOV ou WEBM — até 5GB</p>
+                        <button class="btn-secondary btn-sm" id="btn-browse">Procurar arquivo</button>
                         <input type="file" id="file-input" hidden accept="video/mp4,video/quicktime,video/webm">
                     </div>
                 </div>
             </div>
-            
-            <div class="trusted-by">
-                <p>Usado por mais de 50.000 criadores</p>
+
+            <!-- Hero Demo: Transform Animation -->
+            <div class="hero-demo">
+                <div class="demo-source">
+                    <i class="fa-solid fa-play"></i>
+                </div>
+                <div class="demo-arrow">
+                    <i class="fa-solid fa-arrow-right"></i>
+                    <span>AI</span>
+                </div>
+                <div class="demo-clips">
+                    <div class="demo-clip-card">
+                        <span class="demo-score">92</span>
+                    </div>
+                    <div class="demo-clip-card">
+                        <span class="demo-score">87</span>
+                    </div>
+                    <div class="demo-clip-card">
+                        <span class="demo-score">84</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Social Proof -->
+            <div class="social-proof">
+                <p>Usado por 12.000+ criadores no Brasil</p>
                 <div class="logos">
-                    <!-- Logos simuladas -->
                     <i class="fa-brands fa-tiktok"></i>
                     <i class="fa-brands fa-instagram"></i>
                     <i class="fa-brands fa-youtube"></i>
@@ -86,59 +122,88 @@
             </div>
         </section>
 
-        <!-- Processing Section (Hidden by default) -->
+        <!-- ═══════════ PROCESSING ═══════════ -->
         <section class="processing hidden" id="processing-section">
-            <div class="processing-content glass-panel">
-                <div class="loader-circle">
-                    <svg viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="45"></circle>
-                        <circle cx="50" cy="50" r="45" class="progress"></circle>
-                    </svg>
-                    <div class="percentage" id="processing-percentage">0%</div>
+            <div class="processing-content">
+                <!-- Wave Visualizer -->
+                <div class="wave-visualizer">
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
+                    <div class="wave-bar"></div>
                 </div>
+
                 <h2 class="processing-title">Analisando o vídeo...</h2>
+                <div class="processing-status" id="processing-percentage">0%</div>
+
+                <!-- Progress Bar -->
+                <div class="progress-track">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+
+                <!-- Steps -->
                 <div class="processing-steps">
-                    <div class="step active" id="step-1"><i class="fa-solid fa-check"></i> Baixando mídia</div>
-                    <div class="step" id="step-2"><i class="fa-solid fa-spinner fa-spin"></i> Transcrevendo áudio</div>
-                    <div class="step pending" id="step-3"><i class="fa-solid fa-circle"></i> Detectando momentos virais</div>
-                    <div class="step pending" id="step-4"><i class="fa-solid fa-circle"></i> Renderizando legendas</div>
+                    <div class="step active" id="step-1">
+                        <i class="fa-solid fa-check"></i> Baixando mídia
+                    </div>
+                    <div class="step" id="step-2">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Transcrevendo áudio
+                    </div>
+                    <div class="step pending" id="step-3">
+                        <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i> Detectando momentos virais
+                    </div>
+                    <div class="step pending" id="step-4">
+                        <i class="fa-solid fa-circle" style="font-size: 0.5rem;"></i> Renderizando legendas
+                    </div>
                 </div>
             </div>
         </section>
 
-        <!-- Dashboard / Results Section (Hidden by default) -->
+        <!-- ═══════════ RESULTS ═══════════ -->
         <section class="results hidden" id="results-section">
             <div class="results-header">
                 <div class="video-info">
                     <div class="video-thumbnail">
-                        <i class="fa-solid fa-video"></i>
+                        <i class="fa-solid fa-clapperboard"></i>
                     </div>
                     <div>
                         <h2>Clipes Gerados</h2>
-                        <p class="source-name">Podcast Episódio #42.mp4</p>
+                        <p class="source-name">source.mp4</p>
                     </div>
                 </div>
-                <button class="btn-secondary btn-sm" id="btn-new-video"><i class="fa-solid fa-plus"></i> Novo Vídeo</button>
+                <button class="btn-secondary btn-sm" id="btn-new-video">
+                    <i class="fa-solid fa-plus"></i> Novo Vídeo
+                </button>
             </div>
-            
+
             <div class="clips-grid" id="clips-container">
-                <!-- Clipes injetados via JS -->
+                <!-- Clips injected via JS -->
             </div>
         </section>
-        
-        <!-- Editor Modal (Hidden by default) -->
+
+        <!-- ═══════════ EDITOR MODAL ═══════════ -->
         <div class="modal hidden" id="editor-modal">
-            <div class="modal-content glass-panel">
+            <div class="modal-content">
                 <div class="modal-header">
                     <h3>Editor de Clipe</h3>
-                    <button class="btn-close" id="btn-close-modal"><i class="fa-solid fa-xmark"></i></button>
+                    <button class="btn-close" id="btn-close-modal">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
                 <div class="modal-body">
                     <div class="editor-layout">
                         <div class="video-preview-container">
                             <div class="video-player-mock">
                                 <i class="fa-solid fa-play play-icon"></i>
-                                <div class="mock-captions">Eu adoro programar <span>IA</span></div>
+                                <div class="mock-captions">Cole um link <span>acima</span></div>
                             </div>
                             <div class="player-controls">
                                 <button><i class="fa-solid fa-play"></i></button>
@@ -149,34 +214,65 @@
                             </div>
                         </div>
                         <div class="transcript-editor">
-                            <h4>Transcrição <span class="badge sm">Editar</span></h4>
+                            <h4>
+                                Transcrição
+                                <span class="badge badge-edit sm">Editar</span>
+                            </h4>
                             <div class="transcript-text" id="transcript-container">
-                                <!-- Palavras injetadas via JS -->
+                                <!-- Words injected via JS -->
                             </div>
                             <div class="editor-actions">
-                                <button class="btn-secondary block"><i class="fa-solid fa-wand-sparkles"></i> Estilo das Legendas</button>
-                                <button class="btn-primary block"><i class="fa-solid fa-download"></i> Exportar 1080p</button>
+                                <div class="style-select-container block" style="width: 100%;">
+                                    <label for="caption-style-select" style="font-size: 0.8rem; color: var(--text-300); margin-bottom: 0.2rem; display: block;">
+                                        <i class="fa-solid fa-wand-sparkles"></i> Estilo das Legendas
+                                    </label>
+                                    <select id="caption-style-select" class="btn-secondary" style="width: 100%; text-align: left; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                        <option value="Yellow">Amarelo (Padrão)</option>
+                                        <option value="Green">Verde</option>
+                                        <option value="White">Branco</option>
+                                    </select>
+                                </div>
+                                <button class="btn-primary block" id="btn-export-clip" style="margin-top: 1rem;">
+                                    <i class="fa-solid fa-download"></i> Exportar 1080p
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <!-- Auth Modal -->
+
+        <!-- ═══════════ AUTH MODAL ═══════════ -->
         <div class="modal hidden" id="auth-modal">
-            <div class="modal-content glass-panel" style="max-width: 400px; margin: 10vh auto;">
+            <div class="modal-content" style="max-width: 420px; margin: 10vh auto;">
                 <div class="modal-header">
                     <h3 id="auth-title">Entrar</h3>
-                    <button class="btn-close" id="btn-close-auth"><i class="fa-solid fa-xmark"></i></button>
+                    <button class="btn-close" id="btn-close-auth">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
                 <div class="modal-body">
-                    <form id="auth-form" style="display: flex; flex-direction: column; gap: 15px;">
-                        <input type="email" id="auth-email" placeholder="Seu email" required class="input-group" style="padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); color: white;">
-                        <input type="password" id="auth-password" placeholder="Sua senha" required class="input-group" style="padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.5); color: white;">
+                    <form id="auth-form" style="display: flex; flex-direction: column; gap: 1rem;">
+                        <input
+                            type="email"
+                            id="auth-email"
+                            placeholder="Seu email"
+                            required
+                            style="padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--surface-2); color: var(--text-100); font-size: 0.9rem;"
+                        >
+                        <input
+                            type="password"
+                            id="auth-password"
+                            placeholder="Sua senha"
+                            required
+                            style="padding: 0.75rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle); background: var(--surface-2); color: var(--text-100); font-size: 0.9rem;"
+                        >
                         <button type="submit" class="btn-primary block" id="btn-submit-auth">Entrar</button>
                     </form>
-                    <p style="text-align: center; margin-top: 15px; font-size: 0.9em;">
-                        <a href="#" id="auth-toggle-mode" style="color: #a78bfa;">Não tem uma conta? Cadastre-se</a>
+                    <p style="text-align: center; margin-top: 1rem; font-size: 0.85rem;">
+                        <a href="#" id="auth-toggle-mode" style="color: var(--accent-ai);">
+                            Não tem uma conta? Cadastre-se
+                        </a>
                     </p>
                 </div>
             </div>
@@ -184,6 +280,7 @@
 
     </main>
 
+    <!-- Scripts -->
     <script src="js/mockData.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/app.js"></script>

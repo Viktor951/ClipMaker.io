@@ -99,7 +99,7 @@ async def process_url(request: Request, url: str = Form(...), current_user: dict
             url
         ]
         
-        result = subprocess.run(download_cmd, capture_output=True, text=True, timeout=600)
+        result = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
         
         if result.returncode != 0:
             error_line = result.stderr.strip().splitlines()[-1] if result.stderr else "Desconhecido"

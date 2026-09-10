@@ -3,19 +3,28 @@ import json
 import uuid
 from typing import List, Dict, Any
 import asyncpg
-from dotenv import load_dotenv
+from backend.app.core.config import settings
 
-load_dotenv()
+import asyncio
 
-DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/clipmaker_db")
+_pools = {}
 
-_pool = None
+async def init_pool():
+    loop = asyncio.get_running_loop()
+    if loop not in _pools:
+        _pools[loop] = await asyncpg.create_pool(dsn=settings.DATABASE_URL, min_size=1, max_size=10)
+
+async def close_pool():
+    loop = asyncio.get_running_loop()
+    if loop in _pools:
+        await _pools[loop].close()
+        del _pools[loop]
 
 async def get_pool():
-    global _pool
-    if _pool is None:
-        _pool = await asyncpg.create_pool(dsn=DB_URL, min_size=1, max_size=10)
-    return _pool
+    loop = asyncio.get_running_loop()
+    if loop not in _pools:
+        await init_pool()
+    return _pools[loop]
 
 async def create_user_safe(email: str, password_hash: str, name: str = None):
     pool = await get_pool()
@@ -65,7 +74,13 @@ async def get_project_with_clips(project_id: str):
         project = dict(project_row)
         
         clips = await conn.fetch("SELECT * FROM clips WHERE projectId = $1", project_id)
-        project['clips'] = [dict(c) for c in clips]
+        clips_list = []
+        for c in clips:
+            cdict = dict(c)
+            cdict['words'] = json.loads(cdict['wordsjson']) if cdict.get('wordsjson') else []
+            clips_list.append(cdict)
+            
+        project['clips'] = clips_list
             
         return project
 
@@ -75,11 +90,30 @@ async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]
         async with conn.transaction():
             for clip in clips_data:
                 clip_id = clip.get('id', str(uuid.uuid4()))
+                words_json = json.dumps(clip.get('words', []))
                 await conn.execute(
-                    """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, renderedUrl, status) 
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)""",
+                    """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, renderedUrl, status, captionConfig, wordsJson) 
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
                     clip_id, project_id, clip['title'], clip['hookReason'], 0.0, 0.0, 
                     float(str(clip['duration']).replace(':', '.')), # simplified
-                    clip['viralScore'], clip['id'], 'COMPLETED'
+                    clip['viralScore'], clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json
                 )
             await conn.execute("UPDATE projects SET status = 'READY' WHERE id = $1", project_id)
+
+async def get_clip(clip_id: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        clip = await conn.fetchrow("SELECT * FROM clips WHERE id = $1", clip_id)
+        if not clip:
+            return None
+        cdict = dict(clip)
+        cdict['words'] = json.loads(cdict['wordsjson']) if cdict.get('wordsjson') else []
+        return cdict
+
+async def update_clip_words_and_style(clip_id: str, words_json: str, caption_config: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE clips SET wordsJson = $1, captionConfig = $2 WHERE id = $3",
+            words_json, caption_config, clip_id
+        )

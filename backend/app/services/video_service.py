@@ -208,7 +208,7 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
 
     encoding_params = get_encoding_params()
     srt_escaped = escape_ffmpeg_path(srt_path)
-    sub_style = "FontSize=20,PrimaryColour=&H0000FFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+    sub_style = "FontName=Montserrat,FontSize=20,PrimaryColour=&H0000FFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
 
     filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale=1080:1920"
     if has_subtitles:
@@ -265,5 +265,61 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
                 raise RuntimeError(f"FFmpeg falhou. Erro:\n{result.stderr[-1000:]}")
     except Exception as e:
         raise RuntimeError(f"Erro ao renderizar clipe: {str(e)}")
+        
+    return time.time() - t1
+
+def generate_srt_from_words(words: list, output_srt_path: str):
+    try:
+        with open(output_srt_path, "w", encoding="utf-8") as f:
+            for idx, word in enumerate(words, 1):
+                f.write(f"{idx}\n")
+                f.write(f"{format_timestamp(word['start'])} --> {format_timestamp(word['end'])}\n")
+                
+                text = word['text'].strip().upper()
+                if word.get('highlighted'):
+                    text = f"<b>{text}</b>" # Can be used later if we support HTML tags
+                f.write(f"{text}\n\n")
+    except Exception as e:
+        logger.error(f"ERRO ao gerar SRT a partir das palavras: {e}")
+
+def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style_name: str) -> float:
+    t1 = time.time()
+    
+    # Mapeamento de estilos (cores em formato BGR do ASS script: &Hbbggrr&)
+    colors = {
+        "Yellow": "&H0000FFFF&",
+        "Green": "&H0000FF00&",
+        "White": "&H00FFFFFF&"
+    }
+    color_code = colors.get(style_name, "&H0000FFFF&")
+    
+    srt_escaped = escape_ffmpeg_path(srt_path)
+    sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+    
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", input_clean_path,
+        "-vf", f"subtitles='{srt_escaped}':force_style='{sub_style}'",
+        "-c:a", "copy",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+        output_path
+    ]
+    
+    if is_nvenc_available():
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", input_clean_path,
+            "-vf", f"subtitles='{srt_escaped}':force_style='{sub_style}'",
+            "-c:a", "copy",
+            "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "21", "-b:v", "8M",
+            output_path
+        ]
+        
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"FFmpeg re-render falhou:\n{res.stderr[-1000:]}")
+    except Exception as e:
+        raise RuntimeError(f"Erro no re-render: {str(e)}")
         
     return time.time() - t1

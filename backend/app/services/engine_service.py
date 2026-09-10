@@ -10,7 +10,7 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
     logger.addHandler(handler)
 
-from backend.services import ai_service, video_service
+from backend.app.services import ai_service, video_service
 
 def format_duration(seconds: float) -> str:
     m = int(seconds // 60)
@@ -43,7 +43,7 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     logger.info("Etapa 2/4: Transcrevendo áudio (Whisper)...")
     if project_id:
         import asyncio
-        from backend.services.db_service import update_project_status
+        from backend.app.db.db_service import update_project_status
         asyncio.run(update_project_status(project_id, "TRANSCRIBING"))
         
     segments = ai_service.transcribe_audio(input_path)
@@ -53,7 +53,7 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     logger.info("Etapa 3/4: Calculando melhores momentos...")
     if project_id:
         import asyncio
-        from backend.services.db_service import update_project_status
+        from backend.app.db.db_service import update_project_status
         asyncio.run(update_project_status(project_id, "ANALYZING"))
         
     transcript_text = ai_service.format_transcript_from_segments(segments)
@@ -64,7 +64,7 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     logger.info(f"Etapa 4/4: Renderizando {len(clip_boundaries)} clipe(s)...")
     if project_id and clip_boundaries:
         import asyncio
-        from backend.services.db_service import update_project_status
+        from backend.app.db.db_service import update_project_status
         asyncio.run(update_project_status(project_id, "RENDERING"))
         
     generated_clips_ui = []
@@ -74,8 +74,11 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
         total_clips = len(clip_boundaries)
         logger.info(f"[CLIPE {clip_num}/{total_clips}] Processando ({start_sec:.1f}s -> {end_sec:.1f}s)...")
 
-        clip_id = f"clip_{uuid.uuid4().hex}.mp4"
-        output_path = os.path.join(temp_dir, clip_id)
+        clip_uuid = str(uuid.uuid4())
+        clip_filename = f"clip_{clip_uuid}.mp4"
+        clean_clip_filename = f"clean_{clip_uuid}.mp4"
+        output_clean_path = os.path.join(temp_dir, clean_clip_filename)
+        output_path = os.path.join(temp_dir, clip_filename)
         srt_path = os.path.join(temp_dir, f"sub_{uuid.uuid4().hex}.srt")
 
         has_subtitles = False
@@ -89,20 +92,28 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
         logger.info(f"[CLIPE {clip_num}] Tracking facial (OpenCV)...")
         face_center_x = video_service.calculate_smooth_face_center(input_path, start_sec, end_sec)
 
-        logger.info(f"[CLIPE {clip_num}] Renderizando com FFmpeg...")
+        logger.info(f"[CLIPE {clip_num}] Renderizando vídeo limpo com FFmpeg...")
         try:
             render_time = video_service.render_clip(
                 input_path=input_path,
-                output_path=output_path,
-                srt_path=srt_path,
+                output_path=output_clean_path,
+                srt_path=None,
                 start_sec=start_sec,
                 end_sec=end_sec,
                 orig_w=orig_w,
                 orig_h=orig_h,
                 face_center_x=face_center_x,
-                has_subtitles=has_subtitles
+                has_subtitles=False
             )
-            logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_id}")
+            
+            if has_subtitles:
+                logger.info(f"[CLIPE {clip_num}] Aplicando subtitles no vídeo limpo...")
+                video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow")
+            else:
+                import shutil
+                shutil.copy(output_clean_path, output_path)
+                
+            logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
         except Exception as e:
             raise RuntimeError(f"Erro inesperado ao renderizar clipe {clip_num}: {str(e)}")
         finally:
@@ -113,7 +124,8 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
                 pass
 
         generated_clips_ui.append({
-            "id": clip_id,
+            "id": clip_uuid,
+            "renderedUrl": clip_filename,
             "title": title,
             "duration": format_duration(end_sec - start_sec),
             "viralScore": 95 - i * 5,

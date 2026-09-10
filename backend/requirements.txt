@@ -4,27 +4,32 @@ uvicorn>=0.24.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
 
-# === Processamento de Vídeo ===
+# === Processamento de VÃ­deo ===
 ffmpeg-python>=0.2.0
 opencv-python>=4.8.0
 numpy>=1.24.0
 yt-dlp>=2023.11.16
 
-# === IA / Transcrição ===
+# === IA / TranscriÃ§Ã£o ===
 faster-whisper>=0.10.0
 google-generativeai>=0.8.0
 
 # === Fila de Tarefas ===
 huey>=2.5.0
 
-# === Autenticação ===
+# === AutenticaÃ§Ã£o ===
 passlib[bcrypt]>=1.7.4
 python-jose[cryptography]>=3.3.0
 aiosqlite>=0.19.0
 
-# === Configuração ===
+# === ConfiguraÃ§Ã£o ===
 python-dotenv>=1.0.0
 
-# === Migra��o Postgres e Redis ===
+# === Migração Postgres e Redis ===
 asyncpg>=0.29.0
 redis>=5.0.0
+slowapi>=0.1.8
+
+pydantic-settings>=2.0.0
+
+bcrypt==3.2.2

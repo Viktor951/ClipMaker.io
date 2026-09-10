@@ -20,8 +20,8 @@ const UI = {
                                 <div class="clip-overlay-play"><i class="fa-solid fa-play"></i></div>`;
             
             if (clip.id.startsWith('clip_')) {
-                // É um clipe real, renderiza o vídeo!
-                mediaContent = `<video src="http://localhost:8000/download/${clip.id}" controls style="width: 100%; height: 100%; object-fit: cover;"></video>`;
+                // Vídeo real processado
+                mediaContent = `<video src="/api/v1/video/download/${clip.id}" controls style="width: 100%; height: 100%; object-fit: cover;"></video>`;
             }
 
             card.innerHTML = `
@@ -76,7 +76,7 @@ const UI = {
                 }
 
                 // Dispara o download diretamente pelo navegador
-                window.location.href = `http://localhost:8000/download/${clipId}`;
+                window.location.href = `/api/v1/video/download/${clipId}`;
             });
         });
     },
@@ -85,14 +85,35 @@ const UI = {
         UI.currentClip = clip;
         const modal = document.getElementById('editor-modal');
         const transcriptContainer = document.getElementById('transcript-container');
-        const captionDisplay = document.querySelector('.mock-captions');
+        const videoContainer = document.querySelector('.video-preview-container');
         
         if (!modal || !transcriptContainer) return;
 
-        transcriptContainer.innerHTML = '';
-        captionDisplay.innerHTML = '';
+        // Limpar e reconstruir o video preview
+        if (clip.id.startsWith('clip_')) {
+            videoContainer.innerHTML = `
+                <video id="editor-video-player" src="/api/v1/video/download/${clip.id}" style="width: 100%; height: 100%; object-fit: cover;" autoplay controls loop></video>
+            `;
+        } else {
+            // Mock preview format (fallback)
+            videoContainer.innerHTML = `
+                <div class="video-player-mock">
+                    <i class="fa-solid fa-play play-icon"></i>
+                    <div class="mock-captions">Cole um link <span>acima</span></div>
+                </div>
+            `;
+        }
 
-        clip.words.forEach((w, idx) => {
+        transcriptContainer.innerHTML = '';
+
+        // Definir o select de estilo com base no atual
+        const styleSelect = document.getElementById('caption-style-select');
+        if (styleSelect && clip.captionConfig) {
+            styleSelect.value = clip.captionConfig;
+        }
+
+        const words = clip.words || [];
+        words.forEach((w, idx) => {
             const wordEl = document.createElement('div');
             wordEl.className = `transcript-word ${w.highlighted ? 'highlighted' : ''}`;
             wordEl.setAttribute('data-index', idx);
@@ -101,43 +122,99 @@ const UI = {
                 <i class="fa-solid fa-star star-btn ${w.highlighted ? 'text-yellow' : ''}" title="Destacar palavra"></i>
             `;
 
-            // Click word to jump playback
             wordEl.addEventListener('click', (e) => {
                 if (e.target.classList.contains('star-btn')) {
                     w.highlighted = !w.highlighted;
                     wordEl.classList.toggle('highlighted', w.highlighted);
-                    UI.updateLiveCaptions(w.text, w.highlighted);
                 } else if (!e.target.classList.contains('editable-word')) {
-                    UI.simulatedCurrentTime = w.start;
+                    const videoEl = document.getElementById('editor-video-player');
+                    if (videoEl && w.start !== undefined) {
+                        videoEl.currentTime = w.start;
+                        videoEl.play();
+                    }
                     UI.highlightActiveWord(idx);
-                    UI.updateLiveCaptions(w.text, w.highlighted);
                 }
             });
 
-            // Handle edit change
             const spanEditable = wordEl.querySelector('.editable-word');
             spanEditable.addEventListener('blur', () => {
                 w.text = spanEditable.innerText.trim();
-                UI.updateLiveCaptions(w.text, w.highlighted);
             });
 
             transcriptContainer.appendChild(wordEl);
         });
 
-        // Set first word live
-        if (clip.words.length > 0) {
-            UI.highlightActiveWord(0);
-            UI.updateLiveCaptions(clip.words[0].text, clip.words[0].highlighted);
+        // Sync transcript with real video
+        const videoEl = document.getElementById('editor-video-player');
+        if (videoEl) {
+            videoEl.addEventListener('timeupdate', () => {
+                const ct = videoEl.currentTime;
+                const activeIdx = words.findIndex(w => ct >= w.start && ct <= w.end);
+                if (activeIdx !== -1) {
+                    UI.highlightActiveWord(activeIdx);
+                }
+            });
+        }
+
+        // Export logic
+        const btnExport = document.getElementById('btn-export-clip');
+        if (btnExport) {
+            // Removendo listeners antigos (clonando)
+            const newBtn = btnExport.cloneNode(true);
+            btnExport.parentNode.replaceChild(newBtn, btnExport);
+            
+            newBtn.addEventListener('click', async () => {
+                if (!clip.id.startsWith('clip_')) {
+                    alert('Este é um clipe mockado. Para exportar, use um clipe real.');
+                    return;
+                }
+                
+                const originalText = newBtn.innerHTML;
+                newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando...';
+                newBtn.disabled = true;
+                
+                const style = document.getElementById('caption-style-select').value || 'Yellow';
+                
+                try {
+                    const res = await fetch(`/api/v1/project/clip/${clip.id}/re-render`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            words: clip.words,
+                            style: style
+                        })
+                    });
+                    
+                    if (!res.ok) throw new Error('Erro na renderização');
+                    
+                    // Baixar automaticamente
+                    window.location.href = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                    
+                    // Recarregar preview
+                    if (videoEl) {
+                        videoEl.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                        videoEl.play();
+                    }
+                    
+                    clip.captionConfig = style; // sync state locally
+                } catch (err) {
+                    alert('Falha ao renderizar clipe: ' + err.message);
+                } finally {
+                    newBtn.innerHTML = originalText;
+                    newBtn.disabled = false;
+                }
+            });
         }
 
         modal.classList.remove('hidden');
-        UI.startSimulatedPlayback();
     },
 
     closeEditorModal() {
         const modal = document.getElementById('editor-modal');
         if (modal) modal.classList.add('hidden');
-        if (UI.playbackTimer) clearInterval(UI.playbackTimer);
+        
+        const videoEl = document.getElementById('editor-video-player');
+        if (videoEl) videoEl.pause();
     },
 
     highlightActiveWord(index) {
@@ -145,42 +222,15 @@ const UI = {
         words.forEach((el, idx) => {
             if (idx === index) {
                 el.classList.add('active');
-                el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                // Scroll only if it's not fully visible to avoid jumpy UI
+                const rect = el.getBoundingClientRect();
+                const container = el.parentElement.getBoundingClientRect();
+                if (rect.top < container.top || rect.bottom > container.bottom) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
             } else {
                 el.classList.remove('active');
             }
         });
-    },
-
-    updateLiveCaptions(wordText, isHighlighted) {
-        const captionDisplay = document.querySelector('.mock-captions');
-        if (!captionDisplay) return;
-        if (isHighlighted) {
-            captionDisplay.innerHTML = `<span>${wordText}</span>`;
-        } else {
-            captionDisplay.innerHTML = wordText;
-        }
-    },
-
-    startSimulatedPlayback() {
-        if (UI.playbackTimer) clearInterval(UI.playbackTimer);
-        let currentWordIdx = 0;
-
-        UI.playbackTimer = setInterval(() => {
-            if (!UI.currentClip || !UI.currentClip.words.length) return;
-
-            currentWordIdx = (currentWordIdx + 1) % UI.currentClip.words.length;
-            const wordObj = UI.currentClip.words[currentWordIdx];
-            
-            UI.highlightActiveWord(currentWordIdx);
-            UI.updateLiveCaptions(wordObj.text, wordObj.highlighted);
-
-            // Update timeline progress bar
-            const timeline = document.querySelector('.timeline-progress');
-            if (timeline) {
-                const percent = ((currentWordIdx + 1) / UI.currentClip.words.length) * 100;
-                timeline.style.width = `${percent}%`;
-            }
-        }, 650);
     }
 };

@@ -1,0 +1,103 @@
+/* ═══════════════════════════════════════════════
+   ClipMakerAI — Responsive Breakpoints
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .hero {
+    padding: 2.5rem 0 2rem;
+  }
+
+  .hero-title {
+    font-size: 2rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1rem;
+  }
+
+  .hero-demo {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .demo-arrow {
+    transform: rotate(90deg);
+  }
+
+  .demo-clips {
+    gap: 0.5rem;
+  }
+
+  .demo-clip-card {
+    width: 65px;
+  }
+
+  .nav-links a:not([class*="btn"]) {
+    display: none;
+  }
+
+  .editor-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .video-player-mock {
+    max-height: 300px;
+  }
+
+  .clips-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .upload-container {
+    padding: 1rem;
+  }
+
+  .results-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 1rem;
+  }
+
+  .hero-title {
+    font-size: 1.75rem;
+  }
+
+  .btn-generate {
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+  }
+
+  .input-group {
+    flex-direction: column;
+    border-radius: var(--radius-md);
+    padding: 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .input-group input {
+    width: 100%;
+  }
+
+  .btn-generate {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .input-icon {
+    display: none;
+  }
+
+  .demo-source {
+    width: 140px;
+  }
+
+  .demo-clip-card {
+    width: 52px;
+  }
+}

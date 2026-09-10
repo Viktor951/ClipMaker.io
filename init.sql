@@ -1,0 +1,55 @@
+DROP TABLE IF EXISTS transcriptions CASCADE;
+DROP TABLE IF EXISTS clips CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY,
+    email VARCHAR UNIQUE NOT NULL,
+    passwordHash VARCHAR NOT NULL,
+    name VARCHAR,
+    credits INT DEFAULT 60,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id UUID PRIMARY KEY,
+    userId UUID REFERENCES users(id) ON DELETE CASCADE,
+    title VARCHAR NOT NULL,
+    sourceUrl VARCHAR,
+    sourceFileKey VARCHAR NOT NULL,
+    durationSec FLOAT NOT NULL,
+    status VARCHAR DEFAULT 'PENDING',
+    errorMessage VARCHAR,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS clips (
+    id UUID PRIMARY KEY,
+    projectId UUID REFERENCES projects(id) ON DELETE CASCADE,
+    title VARCHAR NOT NULL,
+    hookReason TEXT NOT NULL,
+    startTime FLOAT NOT NULL,
+    endTime FLOAT NOT NULL,
+    durationSec FLOAT NOT NULL,
+    viralScore INT NOT NULL,
+    aspectRatio VARCHAR DEFAULT '9:16',
+    renderedUrl VARCHAR,
+    status VARCHAR DEFAULT 'QUEUED',
+    errorMessage VARCHAR,
+    captionConfig TEXT,
+    wordsJson TEXT,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS transcriptions (
+    id UUID PRIMARY KEY,
+    projectId UUID UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+    fullText TEXT NOT NULL,
+    language VARCHAR DEFAULT 'pt',
+    wordsJson TEXT NOT NULL,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

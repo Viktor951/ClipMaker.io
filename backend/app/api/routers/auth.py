@@ -18,7 +18,7 @@ async def register(user: UserCreate):
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await get_user_by_email(form_data.username)
-    if not user or not verify_password(form_data.password, user['passwordHash']):
+    if not user or not verify_password(form_data.password, user.get('passwordHash', user.get('passwordhash'))):
         raise HTTPException(status_code=400, detail="Email ou senha incorretos")
     
     access_token = create_access_token(data={"sub": user['email']})
