@@ -20,7 +20,7 @@ MAX_DURATION_SEC = 14400 # 4 hours
 
 @router.post("/upload-and-process/")
 @limiter.limit("5/minute")
-async def process_video(request: Request, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+async def process_video(request: Request, file: UploadFile = File(...), aspect_ratio: str = Form("9:16"), current_user: dict = Depends(get_current_user)):
     content_length = request.headers.get('content-length')
     if content_length and int(content_length) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {MAX_FILE_SIZE_MB}MB).")
@@ -64,12 +64,12 @@ async def process_video(request: Request, file: UploadFile = File(...), current_
         duration_sec=duration
     )
     
-    process_video_task(project_id, str(input_path), str(TEMP_DIR))
+    process_video_task(project_id, str(input_path), str(TEMP_DIR), aspect_ratio)
     return {"status": "processing", "project_id": project_id}
 
 @router.post("/upload-url/")
 @limiter.limit("5/minute")
-async def process_url(request: Request, url: str = Form(...), current_user: dict = Depends(get_current_user)):
+async def process_url(request: Request, url: str = Form(...), aspect_ratio: str = Form("9:16"), current_user: dict = Depends(get_current_user)):
     safe_filename = f"{uuid.uuid4()}.mp4"
     input_path = TEMP_DIR / safe_filename
     video_duration = 0.0
@@ -124,7 +124,7 @@ async def process_url(request: Request, url: str = Form(...), current_user: dict
         source_url=url
     )
     
-    process_video_task(project_id, str(input_path), str(TEMP_DIR))
+    process_video_task(project_id, str(input_path), str(TEMP_DIR), aspect_ratio)
     return {"status": "processing", "project_id": project_id}
 
 @router.get("/download/{clip_id}")

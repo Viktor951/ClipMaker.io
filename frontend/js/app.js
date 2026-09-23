@@ -143,6 +143,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const ratioPills = document.querySelectorAll('.ratio-pill');
+    ratioPills.forEach(pill => {
+        pill.addEventListener('click', () => {
+            ratioPills.forEach(p => {
+                p.classList.remove('active');
+                p.style.borderColor = 'var(--border-subtle)';
+                p.style.color = 'var(--text-300)';
+                const input = p.querySelector('input');
+                if (input) input.checked = false;
+            });
+            pill.classList.add('active');
+            pill.style.borderColor = 'var(--accent-ai)';
+            pill.style.color = 'var(--text-100)';
+            const input = pill.querySelector('input');
+            if (input) input.checked = true;
+        });
+    });
+
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
     const btnBrowse = document.getElementById('btn-browse');
@@ -224,6 +242,9 @@ document.addEventListener('DOMContentLoaded', () => {
         percentageEl.innerText = "0%";
 
         const formData = new FormData();
+        const uploadRatio = document.querySelector('input[name="upload-ratio"]:checked')?.value || '9:16';
+        formData.append("aspect_ratio", uploadRatio);
+
         let endpoint = "";
         if (isFile) {
             formData.append("file", fileOrUrl);

@@ -15,17 +15,18 @@ const UI = {
             card.className = 'clip-card';
             
             const scoreClass = clip.viralScore >= 90 ? 'viral-score-high' : 'viral-score-med';
+            const cardRatio = clip.aspectRatio === '16:9' ? '16/9' : (clip.aspectRatio === '1:1' ? '1/1' : '9/16');
             
             let mediaContent = `<img src="${clip.thumbnail}" alt="${clip.title}">
                                 <div class="clip-overlay-play"><i class="fa-solid fa-play"></i></div>`;
             
             if (clip.id.startsWith('clip_')) {
                 // Vídeo real processado
-                mediaContent = `<video src="/api/v1/video/download/${clip.id}" controls style="width: 100%; height: 100%; object-fit: cover;"></video>`;
+                mediaContent = `<video src="/api/v1/video/download/${clip.id}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
             }
 
             card.innerHTML = `
-                <div class="clip-preview-container" data-id="${clip.id}">
+                <div class="clip-preview-container" data-id="${clip.id}" style="aspect-ratio: ${cardRatio};">
                     ${mediaContent}
                     <div class="clip-badges">
                         <div class="viral-badge ${scoreClass}">
@@ -89,11 +90,43 @@ const UI = {
         
         if (!modal || !transcriptContainer) return;
 
+        // Configuração de Aspect Ratio
+        const aspectSelect = document.getElementById('aspect-ratio-select');
+        const currentRatio = clip.aspectRatio || '9:16';
+        if (aspectSelect) {
+            aspectSelect.value = currentRatio;
+        }
+
+        const updatePlayerAspect = (ratio) => {
+            const wrapper = document.getElementById('editor-video-wrapper');
+            if (wrapper) {
+                if (ratio === '16:9') {
+                    wrapper.style.aspectRatio = '16/9';
+                    wrapper.style.maxHeight = '320px';
+                } else if (ratio === '1:1') {
+                    wrapper.style.aspectRatio = '1/1';
+                    wrapper.style.maxHeight = '360px';
+                } else {
+                    wrapper.style.aspectRatio = '9/16';
+                    wrapper.style.maxHeight = '480px';
+                }
+            }
+        };
+
+        if (aspectSelect) {
+            aspectSelect.onchange = () => {
+                updatePlayerAspect(aspectSelect.value);
+            };
+        }
+
         // Limpar e reconstruir o video preview
         if (clip.id.startsWith('clip_')) {
             videoContainer.innerHTML = `
-                <video id="editor-video-player" src="/api/v1/video/download/${clip.id}" style="width: 100%; height: 100%; object-fit: cover;" autoplay controls loop></video>
+                <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
+                    <video id="editor-video-player" src="/api/v1/video/download/${clip.id}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
+                </div>
             `;
+            updatePlayerAspect(currentRatio);
         } else {
             // Mock preview format (fallback)
             videoContainer.innerHTML = `
@@ -110,6 +143,16 @@ const UI = {
         const styleSelect = document.getElementById('caption-style-select');
         if (styleSelect && clip.captionConfig) {
             styleSelect.value = clip.captionConfig;
+        }
+
+        // Preencher inputs de trim
+        const trimStartInput = document.getElementById('trim-start');
+        const trimEndInput = document.getElementById('trim-end');
+        if (trimStartInput && trimEndInput) {
+            trimStartInput.value = clip.startTime || 0;
+            // Duração do mock normalmente é string "12s"
+            const durationSec = clip.duration ? parseFloat(clip.duration.toString().replace('s', '')) : 0;
+            trimEndInput.value = clip.endTime || durationSec;
         }
 
         const words = clip.words || [];
@@ -174,14 +217,27 @@ const UI = {
                 newBtn.disabled = true;
                 
                 const style = document.getElementById('caption-style-select').value || 'Yellow';
+                const trimStart = parseFloat(document.getElementById('trim-start').value || 0);
+                const trimEnd = parseFloat(document.getElementById('trim-end').value || 0);
+                const aspectRatio = document.getElementById('aspect-ratio-select').value || '9:16';
+                const addSubtitles = document.getElementById('toggle-subtitles').checked;
+                const quality = document.getElementById('quality-select').value || '1080p';
                 
                 try {
-                    const res = await fetch(`/api/v1/project/clip/${clip.id}/re-render`, {
+                    const res = await fetch(`/api/v1/project/clip/${clip.clipId || clip.id}/re-render`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('clipmaker_token')}`
+                        },
                         body: JSON.stringify({
                             words: clip.words,
-                            style: style
+                            style: style,
+                            start_time: trimStart,
+                            end_time: trimEnd,
+                            aspect_ratio: aspectRatio,
+                            add_subtitles: addSubtitles,
+                            quality: quality
                         })
                     });
                     
@@ -191,12 +247,28 @@ const UI = {
                     window.location.href = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
                     
                     // Recarregar preview
-                    if (videoEl) {
-                        videoEl.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
-                        videoEl.play();
+                    const currentVideoEl = document.getElementById('editor-video-player');
+                    if (currentVideoEl) {
+                        currentVideoEl.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                        currentVideoEl.play();
                     }
                     
                     clip.captionConfig = style; // sync state locally
+                    clip.aspectRatio = aspectRatio; // sync aspect ratio
+                    clip.startTime = trimStart;
+                    clip.endTime = trimEnd;
+                    updatePlayerAspect(aspectRatio);
+
+                    // Atualiza o card de preview na listagem principal
+                    const cardPreview = document.querySelector(`.clip-preview-container[data-id="${clip.id}"]`);
+                    if (cardPreview) {
+                        const newCardRatio = aspectRatio === '16:9' ? '16/9' : (aspectRatio === '1:1' ? '1/1' : '9/16');
+                        cardPreview.style.aspectRatio = newCardRatio;
+                        const cardVideo = cardPreview.querySelector('video');
+                        if (cardVideo) {
+                            cardVideo.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                        }
+                    }
                 } catch (err) {
                     alert('Falha ao renderizar clipe: ' + err.message);
                 } finally {

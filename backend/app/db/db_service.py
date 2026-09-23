@@ -91,12 +91,15 @@ async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]
             for clip in clips_data:
                 clip_id = clip.get('id', str(uuid.uuid4()))
                 words_json = json.dumps(clip.get('words', []))
+                start_t = float(clip.get('startTime', 0.0))
+                end_t = float(clip.get('endTime', 0.0))
+                dur_s = float(clip.get('durationSec', (end_t - start_t) if (end_t > start_t) else 0.0))
                 await conn.execute(
-                    """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, renderedUrl, status, captionConfig, wordsJson) 
-                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-                    clip_id, project_id, clip['title'], clip['hookReason'], 0.0, 0.0, 
-                    float(str(clip['duration']).replace(':', '.')), # simplified
-                    clip['viralScore'], clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json
+                    """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson) 
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)""",
+                    clip_id, project_id, clip['title'], clip['hookReason'], 
+                    start_t, end_t, dur_s,
+                    clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json
                 )
             await conn.execute("UPDATE projects SET status = 'READY' WHERE id = $1", project_id)
 
@@ -110,10 +113,25 @@ async def get_clip(clip_id: str):
         cdict['words'] = json.loads(cdict['wordsjson']) if cdict.get('wordsjson') else []
         return cdict
 
-async def update_clip_words_and_style(clip_id: str, words_json: str, caption_config: str):
+async def update_clip_render_details(clip_id: str, words_json: str, caption_config: str, aspect_ratio: str, start_time: float = None, end_time: float = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE clips SET wordsJson = $1, captionConfig = $2 WHERE id = $3",
-            words_json, caption_config, clip_id
-        )
+        if start_time is not None and end_time is not None:
+            duration_sec = max(0.0, end_time - start_time)
+            await conn.execute(
+                """UPDATE clips 
+                   SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, startTime = $4, endTime = $5, durationSec = $6, updatedAt = CURRENT_TIMESTAMP 
+                   WHERE id = $7""",
+                words_json, caption_config, aspect_ratio, start_time, end_time, duration_sec, clip_id
+            )
+        else:
+            await conn.execute(
+                """UPDATE clips 
+                   SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, updatedAt = CURRENT_TIMESTAMP 
+                   WHERE id = $4""",
+                words_json, caption_config, aspect_ratio, clip_id
+            )
+
+async def update_clip_words_and_style(clip_id: str, words_json: str, caption_config: str):
+    return await update_clip_render_details(clip_id, words_json, caption_config, "9:16")
+

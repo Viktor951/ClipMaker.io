@@ -17,13 +17,13 @@ def format_duration(seconds: float) -> str:
     s = int(seconds % 60)
     return f"{m:02d}:{s:02d}"
 
-def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None) -> list:
+def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None, aspect_ratio: str = "9:16") -> list:
     """
     Pipeline completo otimizado:
     1. Probe do vídeo
     2. Transcrição (Whisper) com liberação estrita de VRAM
     3. Detecção de momentos
-    4. Geração de clipes, legendas e crop 9:16 (FFmpeg / NVENC)
+    4. Geração de clipes, legendas e crop configurável (FFmpeg / NVENC)
     """
     input_path = os.path.abspath(input_path)
     temp_dir = os.path.abspath(temp_dir)
@@ -103,12 +103,13 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
                 orig_w=orig_w,
                 orig_h=orig_h,
                 face_center_x=face_center_x,
-                has_subtitles=False
+                has_subtitles=False,
+                aspect_ratio=aspect_ratio
             )
             
             if has_subtitles:
                 logger.info(f"[CLIPE {clip_num}] Aplicando subtitles no vídeo limpo...")
-                video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow")
+                video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow", aspect_ratio=aspect_ratio)
             else:
                 import shutil
                 shutil.copy(output_clean_path, output_path)
@@ -128,6 +129,10 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
             "renderedUrl": clip_filename,
             "title": title,
             "duration": format_duration(end_sec - start_sec),
+            "durationSec": round(end_sec - start_sec, 2),
+            "startTime": round(start_sec, 2),
+            "endTime": round(end_sec, 2),
+            "aspectRatio": aspect_ratio,
             "viralScore": 95 - i * 5,
             "hookReason": hook,
             "words": words_ui,

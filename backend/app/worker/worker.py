@@ -18,15 +18,15 @@ redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 huey = RedisHuey('clipmaker_tasks', url=redis_url)
 
 @huey.task()
-def process_video_task(project_id: str, input_path: str, temp_dir: str):
-    logger.info(f"Iniciando processamento para o projeto: {project_id}")
+def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_ratio: str = "9:16"):
+    logger.info(f"Iniciando processamento para o projeto: {project_id} (proporção: {aspect_ratio})")
     logger.info(f"Input: {input_path}")
     try:
         # Import local para evitar problemas de dependência circular
         from backend.app.services.engine_service import process_video_full_pipeline
         
         # Executa o pipeline de IA
-        clips = process_video_full_pipeline(input_path, temp_dir, project_id)
+        clips = process_video_full_pipeline(input_path, temp_dir, project_id, aspect_ratio)
         logger.info(f"Sucesso! Clipes gerados para {project_id}: {len(clips)}")
         
         # Salva no banco de dados
@@ -56,10 +56,8 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str):
             # torch não instalado, ignora empty_cache
             pass
             
-        # 2. Deleta o vídeo original
+        # 2. Mantém o vídeo original para permitir edições posteriores (aspect ratio, trim, etc.)
+        # A retenção e expiração periódica de arquivos é realizada pelo script scripts/cleanup.py
         if os.path.exists(input_path):
-            try:
-                os.remove(input_path)
-                logger.info(f"Arquivo temporário removido: {input_path}")
-            except OSError:
-                pass
+            logger.info(f"Vídeo original preservado para edições: {input_path}")
+

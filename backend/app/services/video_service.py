@@ -192,26 +192,44 @@ def escape_ffmpeg_path(path: str) -> str:
     escaped = escaped.replace(":", "\\:")
     return escaped
 
-def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: float, end_sec: float, orig_w: int, orig_h: int, face_center_x: int, has_subtitles: bool) -> float:
-    target_crop_h = orig_h
-    target_crop_w = int(target_crop_h * (9 / 16))
-    if target_crop_w > orig_w:
-        target_crop_w = orig_w
-        target_crop_h = int(target_crop_w * (16 / 9))
+def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: float, end_sec: float, orig_w: int, orig_h: int, face_center_x: int, has_subtitles: bool, aspect_ratio: str = "9:16") -> float:
+    if aspect_ratio == "16:9":
+        target_ratio = 16.0 / 9.0
+        scale_w, scale_h = 1920, 1080
+    elif aspect_ratio == "1:1":
+        target_ratio = 1.0
+        scale_w, scale_h = 1080, 1080
+    else: # 9:16
+        target_ratio = 9.0 / 16.0
+        scale_w, scale_h = 1080, 1920
 
+    orig_ratio = orig_w / orig_h
+    if orig_ratio > target_ratio:
+        target_crop_h = orig_h
+        target_crop_w = int(orig_h * target_ratio)
+    else:
+        target_crop_w = orig_w
+        target_crop_h = int(orig_w / target_ratio)
+
+    target_crop_w = min(orig_w, target_crop_w)
+    target_crop_h = min(orig_h, target_crop_h)
     target_crop_w = target_crop_w - (target_crop_w % 2)
     target_crop_h = target_crop_h - (target_crop_h % 2)
 
-    crop_x = face_center_x - (target_crop_w // 2)
-    crop_x = max(0, min(crop_x, orig_w - target_crop_w))
-    crop_y = (orig_h - target_crop_h) // 2
+    if aspect_ratio == "9:16" and face_center_x is not None:
+        crop_x = face_center_x - (target_crop_w // 2)
+        crop_x = max(0, min(crop_x, orig_w - target_crop_w))
+    else:
+        crop_x = max(0, (orig_w - target_crop_w) // 2)
+
+    crop_y = max(0, (orig_h - target_crop_h) // 2)
 
     encoding_params = get_encoding_params()
-    srt_escaped = escape_ffmpeg_path(srt_path)
+    srt_escaped = escape_ffmpeg_path(srt_path) if srt_path else ""
     sub_style = "FontName=Montserrat,FontSize=20,PrimaryColour=&H0000FFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
 
-    filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale=1080:1920"
-    if has_subtitles:
+    filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale={scale_w}:{scale_h}"
+    if has_subtitles and srt_escaped:
         filter_complex += f",subtitles='{srt_escaped}':force_style='{sub_style}'"
     filter_complex += "[v]"
 
@@ -282,7 +300,7 @@ def generate_srt_from_words(words: list, output_srt_path: str):
     except Exception as e:
         logger.error(f"ERRO ao gerar SRT a partir das palavras: {e}")
 
-def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style_name: str) -> float:
+def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style_name: str, add_subtitles: bool = True, quality: str = "1080p", aspect_ratio: str = "9:16") -> float:
     t1 = time.time()
     
     # Mapeamento de estilos (cores em formato BGR do ASS script: &Hbbggrr&)
@@ -296,10 +314,31 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
     srt_escaped = escape_ffmpeg_path(srt_path)
     sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
     
+    # Optional scaling down if clean video is 1080p but requested 720p
+    scale_filter = ""
+    if quality == "720p":
+        if aspect_ratio == "16:9":
+            scale_filter = "scale=1280:720,"
+        elif aspect_ratio == "1:1":
+            scale_filter = "scale=720:720,"
+        else:
+            scale_filter = "scale=720:1280,"
+        
+    filter_complex = scale_filter
+    if add_subtitles:
+        filter_complex += f"subtitles='{srt_escaped}':force_style='{sub_style}'"
+    else:
+        # If no subtitles and no scale, we just copy (handled below by removing -vf)
+        if filter_complex.endswith(","): filter_complex = filter_complex[:-1]
+        
+    vf_arg = []
+    if filter_complex:
+        vf_arg = ["-vf", filter_complex]
+    
     cmd = [
         "ffmpeg", "-y",
         "-i", input_clean_path,
-        "-vf", f"subtitles='{srt_escaped}':force_style='{sub_style}'",
+        *vf_arg,
         "-c:a", "copy",
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
         output_path
@@ -309,7 +348,7 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
         cmd = [
             "ffmpeg", "-y",
             "-i", input_clean_path,
-            "-vf", f"subtitles='{srt_escaped}':force_style='{sub_style}'",
+            *vf_arg,
             "-c:a", "copy",
             "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "21", "-b:v", "8M",
             output_path
@@ -318,8 +357,110 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
     try:
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
-            raise RuntimeError(f"FFmpeg re-render falhou:\n{res.stderr[-1000:]}")
+            if is_nvenc_available():
+                fallback_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", input_clean_path,
+                    *vf_arg,
+                    "-c:a", "copy",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "21",
+                    output_path
+                ]
+                res2 = subprocess.run(fallback_cmd, capture_output=True, text=True)
+                if res2.returncode != 0:
+                    raise RuntimeError(f"FFmpeg re-render (fallback) falhou:\n{res2.stderr[-1000:]}")
+            else:
+                raise RuntimeError(f"FFmpeg re-render falhou:\n{res.stderr[-1000:]}")
     except Exception as e:
         raise RuntimeError(f"Erro no re-render: {str(e)}")
         
     return time.time() - t1
+
+def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, start_sec: float, end_sec: float, aspect_ratio: str, add_subtitles: bool, style_name: str, quality: str):
+    orig_w, orig_h, _ = get_video_info(source_path)
+    
+    # Define proporção e resolução de saída
+    if aspect_ratio == "16:9":
+        target_ratio = 16.0 / 9.0
+        scale_w = 1920 if quality == "1080p" else 1280
+        scale_h = 1080 if quality == "1080p" else 720
+    elif aspect_ratio == "1:1":
+        target_ratio = 1.0
+        scale_w = 1080 if quality == "1080p" else 720
+        scale_h = 1080 if quality == "1080p" else 720
+    else: # 9:16
+        target_ratio = 9.0 / 16.0
+        scale_w = 1080 if quality == "1080p" else 720
+        scale_h = 1920 if quality == "1080p" else 1280
+
+    orig_ratio = orig_w / orig_h
+    if orig_ratio > target_ratio:
+        # Vídeo fonte é mais largo que o formato alvo: ajusta altura e recorta largura
+        target_crop_h = orig_h
+        target_crop_w = int(orig_h * target_ratio)
+    else:
+        # Vídeo fonte é mais alto que o formato alvo: ajusta largura e recorta altura
+        target_crop_w = orig_w
+        target_crop_h = int(orig_w / target_ratio)
+
+    target_crop_w = min(orig_w, target_crop_w)
+    target_crop_h = min(orig_h, target_crop_h)
+    target_crop_w = target_crop_w - (target_crop_w % 2)
+    target_crop_h = target_crop_h - (target_crop_h % 2)
+
+    crop_x = max(0, (orig_w - target_crop_w) // 2)
+    crop_y = max(0, (orig_h - target_crop_h) // 2)
+
+    filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale={scale_w}:{scale_h}"
+
+    has_valid_srt = bool(srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0)
+    if add_subtitles and has_valid_srt:
+        colors = {"Yellow": "&H0000FFFF&", "Green": "&H0000FF00&", "White": "&H00FFFFFF&"}
+        color_code = colors.get(style_name, "&H0000FFFF&")
+        srt_escaped = escape_ffmpeg_path(srt_path)
+        sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+        filter_complex += f",subtitles='{srt_escaped}':force_style='{sub_style}'"
+    filter_complex += "[v]"
+    
+    encoding_params = get_encoding_params()
+    base_cmd = [
+        "ffmpeg", "-y",
+        "-ss", str(start_sec),
+        "-to", str(end_sec),
+        "-i", source_path,
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "0:a",
+    ]
+    for k, v in encoding_params.items():
+        base_cmd.extend([f"-{k}", str(v)])
+    base_cmd.append(output_path)
+    
+    res = subprocess.run(base_cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        if encoding_params.get("vcodec") == "h264_nvenc":
+            cpu_params = {
+                "vcodec": "libx264",
+                "preset": "fast",
+                "crf": "18",
+                "acodec": "aac",
+                "b:a": "256k",
+                "threads": "4",
+            }
+            fallback_cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(start_sec),
+                "-to", str(end_sec),
+                "-i", source_path,
+                "-filter_complex", filter_complex,
+                "-map", "[v]",
+                "-map", "0:a",
+            ]
+            for k, v in cpu_params.items():
+                fallback_cmd.extend([f"-{k}", str(v)])
+            fallback_cmd.append(output_path)
+            res2 = subprocess.run(fallback_cmd, capture_output=True, text=True)
+            if res2.returncode != 0:
+                raise RuntimeError(f"FFmpeg extract_and_crop (fallback) falhou:\n{res2.stderr[-1000:]}")
+        else:
+            raise RuntimeError(f"FFmpeg extract_and_crop falhou:\n{res.stderr[-1000:]}")

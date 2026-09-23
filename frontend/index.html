@@ -86,6 +86,26 @@
                         <input type="file" id="file-input" hidden accept="video/mp4,video/quicktime,video/webm">
                     </div>
                 </div>
+
+                <div class="upload-ratio-selector" style="display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-subtle); flex-wrap: wrap;">
+                    <span style="font-size: 0.8rem; color: var(--text-300); font-weight: 500;">
+                        <i class="fa-solid fa-crop-simple"></i> Formato dos cortes:
+                    </span>
+                    <div style="display: flex; gap: 0.5rem;" id="upload-ratio-options">
+                        <label class="ratio-pill active" style="cursor: pointer; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.35rem 0.75rem; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--accent-ai); color: var(--text-100); transition: all 0.2s ease;">
+                            <input type="radio" name="upload-ratio" value="9:16" checked style="display: none;">
+                            <i class="fa-solid fa-mobile-screen-button"></i> 9:16 (Vertical)
+                        </label>
+                        <label class="ratio-pill" style="cursor: pointer; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.35rem 0.75rem; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-300); transition: all 0.2s ease;">
+                            <input type="radio" name="upload-ratio" value="16:9" style="display: none;">
+                            <i class="fa-solid fa-desktop"></i> 16:9 (Horizontal)
+                        </label>
+                        <label class="ratio-pill" style="cursor: pointer; display: flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.35rem 0.75rem; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-300); transition: all 0.2s ease;">
+                            <input type="radio" name="upload-ratio" value="1:1" style="display: none;">
+                            <i class="fa-solid fa-square"></i> 1:1 (Quadrado)
+                        </label>
+                    </div>
+                </div>
             </div>
 
             <!-- Hero Demo: Transform Animation -->
@@ -222,19 +242,49 @@
                                 <!-- Words injected via JS -->
                             </div>
                             <div class="editor-actions">
-                                <div class="style-select-container block" style="width: 100%;">
-                                    <label for="caption-style-select" style="font-size: 0.8rem; color: var(--text-300); margin-bottom: 0.2rem; display: block;">
-                                        <i class="fa-solid fa-wand-sparkles"></i> Estilo das Legendas
-                                    </label>
-                                    <select id="caption-style-select" class="btn-secondary" style="width: 100%; text-align: left; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
-                                        <option value="Yellow">Amarelo (Padrão)</option>
-                                        <option value="Green">Verde</option>
-                                        <option value="White">Branco</option>
-                                    </select>
+                                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <div style="flex: 1;">
+                                        <label for="trim-start" style="font-size: 0.8rem; color: var(--text-300);">Início (s)</label>
+                                        <input type="number" id="trim-start" step="0.1" style="width: 100%; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label for="trim-end" style="font-size: 0.8rem; color: var(--text-300);">Fim (s)</label>
+                                        <input type="number" id="trim-end" step="0.1" style="width: 100%; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                    </div>
                                 </div>
-                                <button class="btn-primary block" id="btn-export-clip" style="margin-top: 1rem;">
-                                    <i class="fa-solid fa-download"></i> Exportar 1080p
-                                </button>
+                                <div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">
+                                    <div style="flex: 1;">
+                                        <label for="aspect-ratio-select" style="font-size: 0.8rem; color: var(--text-300);">Proporção</label>
+                                        <select id="aspect-ratio-select" class="btn-secondary" style="width: 100%; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                            <option value="9:16" selected>9:16 (Vertical)</option>
+                                            <option value="16:9">16:9 (Horizontal)</option>
+                                            <option value="1:1">1:1 (Quadrado)</option>
+                                        </select>
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label for="caption-style-select" style="font-size: 0.8rem; color: var(--text-300);">Estilo Legenda</label>
+                                        <select id="caption-style-select" class="btn-secondary" style="width: 100%; padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                            <option value="Yellow">Amarelo</option>
+                                            <option value="Green">Verde</option>
+                                            <option value="White">Branco</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-100); margin-bottom: 1rem; cursor: pointer;">
+                                    <input type="checkbox" id="toggle-subtitles" checked style="accent-color: var(--accent-ai); width: 16px; height: 16px;">
+                                    Queimar legendas no vídeo
+                                </label>
+
+                                <div style="display: flex; gap: 0.5rem;">
+                                    <select id="quality-select" class="btn-secondary" style="padding: 0.5rem; background: var(--surface-2); border: 1px solid var(--border-subtle); color: var(--text-100); border-radius: var(--radius-md);">
+                                        <option value="1080p">1080p</option>
+                                        <option value="720p">720p</option>
+                                    </select>
+                                    <button class="btn-primary block" id="btn-export-clip" style="flex: 1;">
+                                        <i class="fa-solid fa-download"></i> Exportar
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
