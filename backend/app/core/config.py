@@ -1,8 +1,11 @@
 from pydantic_settings import BaseSettings
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "ClipMaker.io"
@@ -21,7 +24,24 @@ class Settings(BaseSettings):
     
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
-    class Config:
-        env_file = ".env"
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://localhost")
+
+    # Diretório compartilhado entre API e worker (uploads, clipes renderizados)
+    TEMP_DIR: str = os.getenv("TEMP_DIR", str(_BACKEND_DIR / "temp_videos"))
+    MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "2000"))
+    MAX_DURATION_SEC: int = int(os.getenv("MAX_DURATION_SEC", "14400"))
+    
+    model_config = {
+        "env_file": ".env",
+        "extra": "ignore"
+    }
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.ENVIRONMENT == "production" and self.SECRET_KEY == "chave_secreta_padrao_apenas_para_desenvolvimento":
+            raise RuntimeError("CRITICAL SECURITY ERROR: SECRET_KEY is using the default value in production!")
+        if self.ENVIRONMENT == "production" and len(self.SECRET_KEY) < 32:
+            raise RuntimeError("CRITICAL SECURITY ERROR: SECRET_KEY must have at least 32 characters in production!")
 
 settings = Settings()

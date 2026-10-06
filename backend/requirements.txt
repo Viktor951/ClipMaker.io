@@ -1,35 +1,33 @@
 # === Framework Web ===
-fastapi>=0.104.0
-uvicorn>=0.24.0
-python-multipart>=0.0.6
-pydantic>=2.0.0
+fastapi==0.104.0
+uvicorn==0.24.0
+python-multipart==0.0.6
+pydantic==2.4.2
+pydantic-settings==2.0.3
+email-validator==2.1.0.post1
 
-# === Processamento de VÃ­deo ===
-ffmpeg-python>=0.2.0
-opencv-python>=4.8.0
-numpy>=1.24.0
-yt-dlp>=2023.11.16
+# === Processamento de Vídeo ===
+ffmpeg-python==0.2.0
+opencv-python-headless==4.8.0.76
+numpy==1.24.0
+yt-dlp>=2024.11.18
 
-# === IA / TranscriÃ§Ã£o ===
-faster-whisper>=0.10.0
-google-generativeai>=0.8.0
+# === IA / Transcrição ===
+faster-whisper==1.0.3
+google-generativeai==0.8.0
 
 # === Fila de Tarefas ===
-huey>=2.5.0
+huey==2.5.0
 
-# === AutenticaÃ§Ã£o ===
-passlib[bcrypt]>=1.7.4
-python-jose[cryptography]>=3.3.0
-aiosqlite>=0.19.0
-
-# === ConfiguraÃ§Ã£o ===
-python-dotenv>=1.0.0
-
-# === Migração Postgres e Redis ===
-asyncpg>=0.29.0
-redis>=5.0.0
-slowapi>=0.1.8
-
-pydantic-settings>=2.0.0
-
+# === Autenticação ===
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
 bcrypt==3.2.2
+
+# === Configuração ===
+python-dotenv==1.0.0
+
+# === Banco e Rate Limiting ===
+asyncpg==0.29.0
+redis==5.0.0
+slowapi==0.1.8

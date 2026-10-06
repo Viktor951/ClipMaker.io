@@ -1,0 +1,7 @@
+# Dependências de teste — NÃO incluir na imagem Docker de runtime
+-r requirements.txt
+
+gunicorn==21.2.0
+pytest==7.4.3
+pytest-asyncio==0.23.2
+httpx==0.25.2

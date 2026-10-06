@@ -1,3 +1,6 @@
+-- Migração 001 — esquema inicial (idempotente: seguro rodar várias vezes).
+-- NUNCA use DROP TABLE aqui. Novas alterações => novo arquivo 002_*.sql, 003_*.sql...
+
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     email VARCHAR UNIQUE NOT NULL,
@@ -48,3 +51,6 @@ CREATE TABLE IF NOT EXISTS transcriptions (
     wordsJson TEXT NOT NULL,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_projects_userid ON projects(userId);
+CREATE INDEX IF NOT EXISTS idx_clips_projectid ON clips(projectId);

@@ -4,7 +4,6 @@ import logging
 import os
 import json
 from dotenv import load_dotenv
-import google.generativeai as genai
 
 load_dotenv()
 
@@ -27,28 +26,31 @@ def _detect_device():
             logger.info(f"GPU detectada: {torch.cuda.get_device_name(0)}")
             return "cuda", "float16"
         else:
-            logger.warning("⚠️ Rodando Whisper em CPU — isso pode ser MUITO mais lento. Verifique se o CUDA/torch com GPU está instalado corretamente.")
+            logger.warning("⚠️ Rodando Whisper em CPU — isso pode ser MUITO mais lento.")
             return "cpu", "int8"
     except ImportError:
-        logger.warning("⚠️ Rodando Whisper em CPU (PyTorch não instalado) — isso pode ser MUITO mais lento. Verifique se o CUDA/torch com GPU está instalado corretamente.")
+        logger.warning("⚠️ Rodando Whisper em CPU (PyTorch não instalado).")
         return "cpu", "int8"
 
 def transcribe_audio(input_path: str, language: str = "pt") -> list:
     """
     Transcreve o áudio do vídeo usando Whisper.
     Auto-detecta CUDA/CPU e garante limpeza de VRAM.
+    
+    Retorna os segmentos como lista de dicts leves (não objetos Whisper),
+    para permitir liberação imediata do modelo e seus buffers internos.
     """
     device, compute_type = _detect_device()
-    logger.info(f"Transcrevendo áudio (Whisper small, device={device})...")
+    logger.info(f"Transcrevendo áudio (Whisper tiny, device={device}, compute={compute_type})...")
     t0 = time.time()
-    segments = []
+    lightweight_segments = []
     model = None
     
     try:
         from faster_whisper import WhisperModel
         
-        logger.info("Carregando modelo Whisper small...")
-        model = WhisperModel("small", device=device, compute_type=compute_type)
+        logger.info("Carregando modelo Whisper tiny...")
+        model = WhisperModel("tiny", device=device, compute_type="int8")
         logger.info("Modelo carregado. Iniciando transcrição...")
         
         segments_gen, info = model.transcribe(
@@ -59,9 +61,26 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
             vad_parameters=dict(min_silence_duration_ms=500)
         )
         
-        segments = list(segments_gen)
+        # Converter generator em lista de dicts leves imediatamente.
+        # Isso permite que os objetos internos do Whisper sejam liberados com o modelo.
+        for seg in segments_gen:
+            seg_dict = {
+                "start": seg.start,
+                "end": seg.end,
+                "text": seg.text,
+                "words": []
+            }
+            if hasattr(seg, 'words') and seg.words:
+                for w in seg.words:
+                    seg_dict["words"].append({
+                        "word": w.word,
+                        "start": w.start,
+                        "end": w.end
+                    })
+            lightweight_segments.append(seg_dict)
+        
         elapsed = time.time() - t0
-        logger.info(f"Transcrição concluída em {elapsed:.1f}s ({len(segments)} segmentos)")
+        logger.info(f"Transcrição concluída em {elapsed:.1f}s ({len(lightweight_segments)} segmentos)")
         
     except Exception as e:
         logger.error(f"FALHA na transcrição Whisper: {str(e)}", exc_info=True)
@@ -78,16 +97,18 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
         except (ImportError, Exception):
             pass
             
-    return segments
+    return lightweight_segments
 
 def format_transcript_from_segments(segments: list) -> str:
-    """Formata os segmentos gerados pelo Whisper em um texto estruturado para o LLM."""
-    transcript = []
+    """Formata os segmentos em um texto estruturado para o LLM."""
+    parts = []
     for seg in segments:
-        text = seg.text.strip()
+        text = seg["text"].strip() if isinstance(seg, dict) else seg.text.strip()
         if text:
-            transcript.append(f"[{seg.start:.1f}s - {seg.end:.1f}s] {text}")
-    return "\n".join(transcript)
+            start = seg["start"] if isinstance(seg, dict) else seg.start
+            end = seg["end"] if isinstance(seg, dict) else seg.end
+            parts.append(f"[{start:.1f}s - {end:.1f}s] {text}")
+    return "\n".join(parts)
 
 def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
     """Envia o transcript para o Gemini e retorna a lista de clipes estruturada."""
@@ -98,6 +119,8 @@ def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
         logger.error("A chave GEMINI_API_KEY não foi encontrada no arquivo .env!")
         return _fallback_clip_boundaries(duration)
     
+    # Lazy import — evita carregar gRPC/protobuf na RAM se não for necessário
+    import google.generativeai as genai
     genai.configure(api_key=api_key)
     
     prompt = f"""Você é um Produtor Sênior de Vídeos Virais para TikTok, Reels e Shorts (como o OpusClip).
@@ -130,7 +153,7 @@ TRANSCRIÇÃO DO VÍDEO:
     models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
     
     for model_name in models_to_try:
-        for attempt in range(3):  # Até 3 tentativas por modelo
+        for attempt in range(3):
             try:
                 logger.info(f"Tentativa {attempt+1} com modelo: {model_name}")
                 model = genai.GenerativeModel(model_name)
@@ -143,9 +166,7 @@ TRANSCRIÇÃO DO VÍDEO:
                 )
                 
                 raw_json = response.text
-                print(f"\n=== RESPOSTA DO GEMINI ({model_name}) ===")
-                print(raw_json[:500])
-                print("=================================\n")
+                logger.debug(f"Resposta do Gemini ({model_name}): {raw_json[:300]}...")
                 
                 clips = json.loads(raw_json)
                 
@@ -164,22 +185,18 @@ TRANSCRIÇÃO DO VÍDEO:
                 err_str = str(e)
                 logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
                 
-                # Se for 503 (sobrecarga), esperar e tentar novamente
                 if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
                     wait_time = (attempt + 1) * 10
                     logger.info(f"API sobrecarregada. Aguardando {wait_time}s antes de nova tentativa...")
                     time.sleep(wait_time)
                     continue
                 
-                # Se for 404 (modelo não encontrado), tentar próximo modelo
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     logger.warning(f"Modelo {model_name} não disponível. Tentando próximo...")
                     break
                     
-                # Outro erro: aguardar e tentar novamente
                 time.sleep(5)
     
-    # Todos os modelos falharam: usar fallback
     logger.error("Todos os modelos Gemini falharam. Usando fallback matemático.")
     return _fallback_clip_boundaries(duration)
 

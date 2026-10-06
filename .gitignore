@@ -15,8 +15,12 @@ __pycache__/
 *.db-shm
 *.db-wal
 
-# === Ambiente ===
+# === Ambiente e Segredos ===
 .env
+.env.*
+*.env
+**/.env
+**/.env.*
 node_modules/
 
 # === Documentos gerados ===

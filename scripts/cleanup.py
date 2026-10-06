@@ -1,10 +1,7 @@
 import os
 import time
-import sqlite3
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TEMP_DIR = os.path.join(BASE_DIR, "temp_videos")
-DB_PATH = os.path.join(BASE_DIR, "dev.db")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEMP_DIR = os.path.join(BASE_DIR, "backend", "temp_videos")
 MAX_AGE_HOURS = 24
 
 def cleanup_old_files():
@@ -24,12 +21,7 @@ def cleanup_old_files():
                     except Exception as e:
                         print(f"[CLEANUP] Erro ao remover {filename}: {e}")
 
-    # Podem ser adicionadas querys para deletar projetos no DB muito antigos se necessário
-    # conn = sqlite3.connect(DB_PATH)
-    # conn.execute("DELETE FROM projects WHERE createdAt <= datetime('now', '-1 day')")
-    # conn.commit()
-    # conn.close()
-    
+
     print("[CLEANUP] Rotina de limpeza concluída.")
 
 if __name__ == "__main__":

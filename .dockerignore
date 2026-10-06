@@ -1,26 +1,60 @@
+# ── Git ──────────────────────────────────────────────────────────────────────
 .git
-__pycache__
-*.pyc
-*.pyo
-*.pyd
+.gitignore
+.github
+
+# ── Python cache e bytecode ─────────────────────────────────────────────────
+**/__pycache__
+**/*.py[cod]
+*$py.class
+*.so
 .Python
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+*.egg
+
+# ── Ambientes virtuais ──────────────────────────────────────────────────────
 env/
 venv/
-.env/
 .venv/
-node_modules/
-temp_videos/
-backend/temp_videos/
-prisma/
-dev.db
-huey_queue.db
-huey_queue.db-shm
-huey_queue.db-wal
-*.mp4
-**/*.mp4
-*.mkv
-**/*.mkv
-*.avi
-**/*.avi
-*.mov
-**/*.mov
+
+# ── Secrets e configuração local (qualquer nível: ex. backend/.env) ─────────
+**/.env
+**/.env.*
+
+# ── IDEs ─────────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.agents/
+*.swp
+*.swo
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+Caddyfile
+
+# ── Dados locais e temporários (qualquer nível) ─────────────────────────────
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite3
+backend/temp_videos/*
+postgres_data/
+
+# ── Frontend (servido pelo Caddy, não pela imagem Python) ───────────────────
+frontend/
+
+# ── Testes e CI ──────────────────────────────────────────────────────────────
+tests/
+test_*.py
+pytest.ini
+backend/requirements-dev.txt
+
+# ── Documentação ─────────────────────────────────────────────────────────────
+README.md
+*.md
+LICENSE

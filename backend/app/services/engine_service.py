@@ -1,5 +1,7 @@
 import os
+import gc
 import uuid
+import shutil
 import time
 import logging
 
@@ -17,13 +19,24 @@ def format_duration(seconds: float) -> str:
     s = int(seconds % 60)
     return f"{m:02d}:{s:02d}"
 
+def _update_status(project_id: str, status: str):
+    """Helper para evitar imports repetidos no pipeline."""
+    from backend.app.core.loop import run_sync
+    from backend.app.db.db_service import update_project_status
+    run_sync(update_project_status(project_id, status))
+
 def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None, aspect_ratio: str = "9:16") -> list:
     """
-    Pipeline completo otimizado:
+    Pipeline completo otimizado para baixo consumo de RAM:
     1. Probe do vídeo
     2. Transcrição (Whisper) com liberação estrita de VRAM
-    3. Detecção de momentos
-    4. Geração de clipes, legendas e crop configurável (FFmpeg / NVENC)
+    3. Detecção de momentos (Gemini)
+    4. Geração de clipes, legendas e crop configurável (FFmpeg)
+    
+    Otimizações de memória aplicadas:
+    - Segmentos Whisper convertidos em dicts leves (ai_service já faz isso)
+    - transcript_text liberado após enviar para LLM
+    - gc.collect() entre etapas pesadas
     """
     input_path = os.path.abspath(input_path)
     temp_dir = os.path.abspath(temp_dir)
@@ -42,36 +55,33 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     # 2. Transcrição
     logger.info("Etapa 2/4: Transcrevendo áudio (Whisper)...")
     if project_id:
-        import asyncio
-        from backend.app.db.db_service import update_project_status
-        asyncio.run(update_project_status(project_id, "TRANSCRIBING"))
+        _update_status(project_id, "TRANSCRIBING")
         
     segments = ai_service.transcribe_audio(input_path)
     logger.info(f"Transcrição finalizada: {len(segments)} segmentos obtidos.")
 
-    # 3. Geração de boundaries
+    # 3. Geração de boundaries via LLM
     logger.info("Etapa 3/4: Calculando melhores momentos...")
     if project_id:
-        import asyncio
-        from backend.app.db.db_service import update_project_status
-        asyncio.run(update_project_status(project_id, "ANALYZING"))
+        _update_status(project_id, "ANALYZING")
         
     transcript_text = ai_service.format_transcript_from_segments(segments)
     clip_boundaries = ai_service.get_viral_clips_from_llm(transcript_text, duration)
-
+    
+    # Liberar o texto da transcrição — pode ser grande para vídeos longos
+    del transcript_text
+    gc.collect()
 
     # 4. Renderização
     logger.info(f"Etapa 4/4: Renderizando {len(clip_boundaries)} clipe(s)...")
     if project_id and clip_boundaries:
-        import asyncio
-        from backend.app.db.db_service import update_project_status
-        asyncio.run(update_project_status(project_id, "RENDERING"))
+        _update_status(project_id, "RENDERING")
         
     generated_clips_ui = []
+    total_clips = len(clip_boundaries)
     
     for i, (start_sec, end_sec, title, hook) in enumerate(clip_boundaries):
         clip_num = i + 1
-        total_clips = len(clip_boundaries)
         logger.info(f"[CLIPE {clip_num}/{total_clips}] Processando ({start_sec:.1f}s -> {end_sec:.1f}s)...")
 
         clip_uuid = str(uuid.uuid4())
@@ -111,7 +121,6 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
                 logger.info(f"[CLIPE {clip_num}] Aplicando subtitles no vídeo limpo...")
                 video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow", aspect_ratio=aspect_ratio)
             else:
-                import shutil
                 shutil.copy(output_clean_path, output_path)
                 
             logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
@@ -138,6 +147,9 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
             "words": words_ui,
             "thumbnail": f"https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80",
         })
+        
+        # GC entre clipes para devolver memória do face tracking e render anterior
+        gc.collect()
 
     logger.info(f"Concluido! {len(generated_clips_ui)} clipe(s) gerado(s).")
     return generated_clips_ui

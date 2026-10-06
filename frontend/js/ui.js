@@ -1,4 +1,24 @@
 // UI Controller and rendering helpers
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function getClipVideoUrl(clipId, extraParam = '') {
+    const token = localStorage.getItem('clipmaker_token') || '';
+    const parts = [];
+    if (token) parts.push(`token=${encodeURIComponent(token)}`);
+    if (extraParam) parts.push(extraParam);
+    const qs = parts.length ? `?${parts.join('&')}` : '';
+    return `/api/v1/video/download/${encodeURIComponent(clipId)}${qs}`;
+}
+
 const UI = {
     currentClip: null,
     playbackTimer: null,
@@ -17,34 +37,39 @@ const UI = {
             const scoreClass = clip.viralScore >= 90 ? 'viral-score-high' : 'viral-score-med';
             const cardRatio = clip.aspectRatio === '16:9' ? '16/9' : (clip.aspectRatio === '1:1' ? '1/1' : '9/16');
             
-            let mediaContent = `<img src="${clip.thumbnail}" alt="${clip.title}">
+            const titleSafe = escapeHtml(clip.title);
+            const hookSafe = escapeHtml(clip.hookReason);
+            const thumbSafe = escapeHtml(clip.thumbnail);
+            
+            let mediaContent = `<img src="${thumbSafe}" alt="${titleSafe}">
                                 <div class="clip-overlay-play"><i class="fa-solid fa-play"></i></div>`;
             
             if (clip.id.startsWith('clip_')) {
-                // Vídeo real processado
-                mediaContent = `<video src="/api/v1/video/download/${clip.id}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
+                // Vídeo real processado com token de autenticação
+                const videoUrl = getClipVideoUrl(clip.id);
+                mediaContent = `<video src="${videoUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
             }
 
             card.innerHTML = `
-                <div class="clip-preview-container" data-id="${clip.id}" style="aspect-ratio: ${cardRatio};">
+                <div class="clip-preview-container" data-id="${escapeHtml(clip.id)}" style="aspect-ratio: ${cardRatio};">
                     ${mediaContent}
                     <div class="clip-badges">
                         <div class="viral-badge ${scoreClass}">
-                            <i class="fa-solid fa-fire"></i> ${clip.viralScore}/100
+                            <i class="fa-solid fa-fire"></i> ${Number(clip.viralScore)}/100
                         </div>
-                        <div class="clip-duration">${clip.duration}</div>
+                        <div class="clip-duration">${escapeHtml(clip.duration)}</div>
                     </div>
                 </div>
                 <div class="clip-details">
                     <div>
-                        <h3 class="clip-card-title">${clip.id.startsWith('clip_') ? 'Seu Clipe Gerado (IA)' : clip.title}</h3>
-                        <p class="clip-card-hook">${clip.id.startsWith('clip_') ? 'Gancho otimizado e cortes precisos feitos pela inteligência artificial.' : clip.hookReason}</p>
+                        <h3 class="clip-card-title">${clip.id.startsWith('clip_') ? 'Seu Clipe Gerado (IA)' : titleSafe}</h3>
+                        <p class="clip-card-hook">${clip.id.startsWith('clip_') ? 'Gancho otimizado e cortes precisos feitos pela inteligência artificial.' : hookSafe}</p>
                     </div>
                     <div class="clip-card-actions">
-                        <button class="btn-secondary btn-sm block btn-edit" data-id="${clip.id}">
+                        <button class="btn-secondary btn-sm block btn-edit" data-id="${escapeHtml(clip.id)}">
                             <i class="fa-solid fa-pen-to-square"></i> Editar Clipe
                         </button>
-                        <button class="btn-primary btn-sm block btn-download" data-id="${clip.id}">
+                        <button class="btn-primary btn-sm block btn-download" data-id="${escapeHtml(clip.id)}">
                             <i class="fa-solid fa-download"></i> Baixar
                         </button>
                     </div>
@@ -56,7 +81,7 @@ const UI = {
 
         // Bind clicks for edit and preview
         container.querySelectorAll('.btn-edit').forEach(el => {
-            el.addEventListener('click', (e) => {
+            el.addEventListener('click', () => {
                 const clipId = el.getAttribute('data-id');
                 const clip = clips.find(c => c.id === clipId);
                 if (clip) {
@@ -76,8 +101,8 @@ const UI = {
                     return;
                 }
 
-                // Dispara o download diretamente pelo navegador
-                window.location.href = `/api/v1/video/download/${clipId}`;
+                // Dispara o download diretamente pelo navegador autenticado
+                window.location.href = getClipVideoUrl(clipId);
             });
         });
     },
@@ -121,9 +146,10 @@ const UI = {
 
         // Limpar e reconstruir o video preview
         if (clip.id.startsWith('clip_')) {
+            const videoUrl = getClipVideoUrl(clip.id);
             videoContainer.innerHTML = `
                 <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                    <video id="editor-video-player" src="/api/v1/video/download/${clip.id}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
+                    <video id="editor-video-player" src="${videoUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
                 </div>
             `;
             updatePlayerAspect(currentRatio);
@@ -150,7 +176,6 @@ const UI = {
         const trimEndInput = document.getElementById('trim-end');
         if (trimStartInput && trimEndInput) {
             trimStartInput.value = clip.startTime || 0;
-            // Duração do mock normalmente é string "12s"
             const durationSec = clip.duration ? parseFloat(clip.duration.toString().replace('s', '')) : 0;
             trimEndInput.value = clip.endTime || durationSec;
         }
@@ -160,8 +185,9 @@ const UI = {
             const wordEl = document.createElement('div');
             wordEl.className = `transcript-word ${w.highlighted ? 'highlighted' : ''}`;
             wordEl.setAttribute('data-index', idx);
+            const safeText = escapeHtml(w.text);
             wordEl.innerHTML = `
-                <span contenteditable="true" class="editable-word">${w.text}</span>
+                <span contenteditable="true" class="editable-word">${safeText}</span>
                 <i class="fa-solid fa-star star-btn ${w.highlighted ? 'text-yellow' : ''}" title="Destacar palavra"></i>
             `;
 
@@ -202,7 +228,6 @@ const UI = {
         // Export logic
         const btnExport = document.getElementById('btn-export-clip');
         if (btnExport) {
-            // Removendo listeners antigos (clonando)
             const newBtn = btnExport.cloneNode(true);
             btnExport.parentNode.replaceChild(newBtn, btnExport);
             
@@ -243,18 +268,19 @@ const UI = {
                     
                     if (!res.ok) throw new Error('Erro na renderização');
                     
+                    const refreshedUrl = getClipVideoUrl(clip.id, `t=${Date.now()}`);
                     // Baixar automaticamente
-                    window.location.href = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                    window.location.href = refreshedUrl;
                     
                     // Recarregar preview
                     const currentVideoEl = document.getElementById('editor-video-player');
                     if (currentVideoEl) {
-                        currentVideoEl.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                        currentVideoEl.src = refreshedUrl;
                         currentVideoEl.play();
                     }
                     
-                    clip.captionConfig = style; // sync state locally
-                    clip.aspectRatio = aspectRatio; // sync aspect ratio
+                    clip.captionConfig = style;
+                    clip.aspectRatio = aspectRatio;
                     clip.startTime = trimStart;
                     clip.endTime = trimEnd;
                     updatePlayerAspect(aspectRatio);
@@ -266,7 +292,7 @@ const UI = {
                         cardPreview.style.aspectRatio = newCardRatio;
                         const cardVideo = cardPreview.querySelector('video');
                         if (cardVideo) {
-                            cardVideo.src = `/api/v1/video/download/${clip.id}?t=${Date.now()}`;
+                            cardVideo.src = refreshedUrl;
                         }
                     }
                 } catch (err) {
@@ -294,7 +320,6 @@ const UI = {
         words.forEach((el, idx) => {
             if (idx === index) {
                 el.classList.add('active');
-                // Scroll only if it's not fully visible to avoid jumpy UI
                 const rect = el.getBoundingClientRect();
                 const container = el.parentElement.getBoundingClientRect();
                 if (rect.top < container.top || rect.bottom > container.bottom) {
