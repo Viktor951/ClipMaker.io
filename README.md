@@ -111,12 +111,37 @@ O compose executa automaticamente:
 
 ---
 
+## 🛡️ Matriz de Segurança e Proteções Ativas
+
+| Vetor de Ataque / Risco | Mecanismo de Mitigação | Componente / Arquivo |
+| :--- | :--- | :--- |
+| **SSRF (Server-Side Request Forgery)** | Validação de scheme (`http`/`https`), bloqueio de IPs privados/loopback/cloud metadata e bloqueio de DNS para nomes de containers Docker internos. | [`backend/app/api/routers/video.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/routers/video.py) |
+| **Injeção de Comandos (CLI Injection)** | Argumentos do `yt-dlp` e `ffmpeg` passados como lista sanitizada com separador de parâmetros `--` para impedir injeção de flags maliciosas. | [`backend/app/services/video_service.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/services/video_service.py) |
+| **SQL Injection (SQLi)** | Consultas 100% parametrizadas via `AsyncPG` (`$1, $2, ...`) e blocos transacionais controlados. Sem interpolação de strings. | [`backend/app/db/db_service.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/db/db_service.py) |
+| **Path Traversal / LFI** | Nomes de arquivos gerados como UUIDv4 e uso estrito de `os.path.basename()` em endpoints de download. | [`backend/app/api/routers/video.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/routers/video.py) |
+| **XSS (Cross-Site Scripting)** | Higienização de strings dinâmicas no frontend antes da injeção no DOM com `escapeHtml()`. | [`frontend/js/ui.js`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/frontend/js/ui.js) |
+| **Força Bruta / Abuso de Recursos** | Rate Limiting em memória/Redis gerenciado via `slowapi` (`5 req/min` em rotas de auth e processamento). | [`backend/app/api/deps.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/deps.py) |
+| **Vazamento de Segredos** | Auditoria de `.gitignore` cobrindo todas as variantes de `.env`, bancos SQLite e arquivos temporários. | [`.gitignore`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/.gitignore) |
+| **Ataques a Nível de Container** | Execução com usuário sem privilégios (`appuser:10001`), remoção de capabilities Linux (`cap_drop: ALL`) e banco isolado em rede interna. | [`docker-compose.prod.yml`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/docker-compose.prod.yml) |
+| **Clickjacking & MIME-sniffing** | Headers de segurança `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` e HSTS injetados pelo Caddy. | [`Caddyfile`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/Caddyfile) |
+
+---
+
 ## 🧪 Testes Automatizados
 
-Para executar a suíte de testes de segurança, ciclo de vida de JWT, validação anti-SSRF e operações de mídia dentro do container:
+A suíte cobre autenticação, ciclo de vida de JWT, proteção anti-SSRF, proporções de vídeo e formatação de legendas.
 
+### Executar Localmente com Pytest:
+```bash
+pip install -r backend/requirements.txt
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+### Executar no Container Docker (com imagem de produção):
 ```bash
 docker run --rm -v "${PWD}:/app" clipmakerai:prod python -c "
+
 from tests.test_core_and_security import (
     test_password_hashing,
     test_jwt_token_lifecycle,
@@ -129,7 +154,7 @@ test_jwt_token_lifecycle()
 test_anti_ssrf_url_validation()
 test_video_crop_and_scale_dimensions()
 test_srt_timestamp_formatting()
-print('Todos os testes passaram!')
+print('✅ Todos os testes de segurança e processamento passaram com sucesso!')
 "
 ```
 

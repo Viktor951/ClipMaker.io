@@ -4,7 +4,14 @@ from backend.app.main import app
 
 @pytest.mark.asyncio
 async def test_register_and_login():
-    async with AsyncClient(app=app, base_url="http://test") as ac:
+    try:
+        from httpx import ASGITransport
+        transport = ASGITransport(app=app)
+        client = AsyncClient(transport=transport, base_url="http://test")
+    except (ImportError, TypeError):
+        client = AsyncClient(app=app, base_url="http://test")
+
+    async with client as ac:
         # 1. Register
         response = await ac.post("/api/v1/auth/register", json={
             "email": "test@example.com",
@@ -21,3 +28,4 @@ async def test_register_and_login():
         })
         assert response.status_code == 200
         assert "access_token" in response.json()
+
