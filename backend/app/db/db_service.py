@@ -72,6 +72,18 @@ async def create_project(user_id: str, title: str, source_file_key: str, duratio
     return project_id
 
 
+async def get_user_projects(user_id: str):
+    if not _is_valid_uuid(user_id):
+        return []
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, userId, title, sourceUrl, sourceFileKey, durationSec, status, errorMessage, createdAt, updatedAt FROM projects WHERE userId = $1 ORDER BY createdAt DESC",
+            user_id
+        )
+        return [dict(r) for r in rows]
+
+
 async def update_project_status(project_id: str, status: str, error_message: str = None):
     if not _is_valid_uuid(project_id):
         return

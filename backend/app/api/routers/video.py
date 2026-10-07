@@ -18,7 +18,7 @@ from backend.app.services.video_service import get_video_info
 from backend.app.worker.worker import process_video_task
 
 logger = logging.getLogger("clipmaker.api.video")
-router = APIRouter(prefix="/video", tags=["video"])
+router = APIRouter(tags=["video"])
 
 TEMP_DIR = Path(settings.TEMP_DIR)
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,6 +60,8 @@ def _is_safe_public_url(url: str) -> bool:
 
 
 @router.post("/upload-and-process/")
+@router.post("/upload-and-process")
+@router.post("/upload")
 @limiter.limit("5/minute")
 async def process_video(
     request: Request,
@@ -121,6 +123,8 @@ async def process_video(
 
 
 @router.post("/upload-url/")
+@router.post("/upload-url")
+@router.post("/process-url")
 @limiter.limit("5/minute")
 async def process_url(
     request: Request,

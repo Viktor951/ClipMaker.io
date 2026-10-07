@@ -6,7 +6,7 @@ from backend.app.models.user import UserCreate
 from backend.app.core.security import verify_password, get_password_hash, create_access_token
 from backend.app.db.db_service import get_user_by_email, create_user_safe
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(tags=["auth"])
 
 
 def _normalize_email(email: str) -> str:

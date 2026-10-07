@@ -2,10 +2,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.11-blue?logo=python&style=for-the-badge" alt="Python" />
-  <img src="https://img.shields.io/badge/FastAPI-0.104-009688?logo=fastapi&style=for-the-badge" alt="FastAPI" />
   <img src="https://img.shields.io/badge/PostgreSQL-15-336791?logo=postgresql&style=for-the-badge" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&style=for-the-badge" alt="Redis" />
-  <img src="https://img.shields.io/badge/Caddy-2-00ADEF?logo=caddy&style=for-the-badge" alt="Caddy" />
+  <img src="https://img.shields.io/badge/Nginx-1.25-009639?logo=nginx&style=for-the-badge" alt="Nginx" />
   <img src="https://img.shields.io/badge/Docker-Production_Ready-2496ED?logo=docker&style=for-the-badge" alt="Docker" />
 </p>
 
@@ -25,7 +24,7 @@ O sistema orquestra tecnologias de ponta para analisar contexto, rastrear rostos
   - Autenticação JWT com senhas hasheadas em Bcrypt.
   - Rate Limiting integrado contra abusos.
   - Proteção estrita contra SSRF em downloads por URL.
-  - CORS restrito, headers HTTP defensivos (HSTS, nosniff, DENY framing).
+  - CORS restrito, headers HTTP defensivos (nosniff, DENY framing).
   - Execução segura em containers Docker com usuário não-root (`appuser`, UID 10001) e privilégios rebaixados (`cap_drop: ALL`).
 
 ---
@@ -36,11 +35,14 @@ O sistema orquestra tecnologias de ponta para analisar contexto, rastrear rostos
                         [ Cliente / Navegador ]
                                   │
                                   ▼
-                   [ Reverse Proxy / Caddy: 80, 443 ]
-                   (TLS Automático, zstd/gzip, SPA)
+                 [ Reverse Proxy & Web / Nginx: 80 ]
+                  (Gzip, Headers Defensivos, SPA)
                                   │
                   ┌───────────────┴───────────────┐
                   ▼                               ▼
+         / (Frontend Estático)            /api/* (Proxy HTTP)
+        [ VanillaJS & HTML5 ]                     │
+                    ▼
          / (Frontend Estático)            /api/* (Proxy HTTP)
         [ VanillaJS & HTML5 ]                     │
                                                   ▼
@@ -76,7 +78,6 @@ O sistema orquestra tecnologias de ponta para analisar contexto, rastrear rostos
 ├── migrations/               # Scripts SQL versionados e idempotentes (001_init.sql)
 ├── scripts/                  # Automação de setup, migração e rotinas de limpeza
 ├── tests/                    # Suíte de testes automatizados e segurança
-├── Caddyfile                 # Configuração do Reverse Proxy de produção
 ├── Dockerfile                # Multi-stage build otimizado com usuário não-root
 ├── docker-compose.prod.yml   # Stack completa de produção com limites e saúde
 └── README-DEPLOY.md          # Guia operacional detalhado (incluindo persistência no Disco D:)
@@ -103,11 +104,11 @@ docker compose -f docker-compose.prod.yml up -d --build
 O compose executa automaticamente:
 1. Subida do PostgreSQL e Redis com healthchecks ativos.
 2. Execução transacional das migrações de banco (`migrations/001_init.sql`).
-3. Inicialização da API FastAPI, Worker de IA, Container de Limpeza e Reverse Proxy Caddy.
+3. Inicialização da API FastAPI, Worker de IA, Container de Limpeza e Frontend/Reverse Proxy Nginx.
 
 ### 3. Acesso à Aplicação
-- **Aplicação Web:** Acesse [https://localhost](https://localhost) (ou seu domínio configurado).
-- **Verificação de Saúde:** [https://localhost/health](https://localhost/health)
+- **Aplicação Web:** Acesse [http://localhost](http://localhost) (ou seu domínio configurado).
+- **Verificação de Saúde:** [http://localhost/api/health](http://localhost/api/health) ou [http://localhost/health](http://localhost/health)
 
 ---
 
@@ -123,7 +124,8 @@ O compose executa automaticamente:
 | **Força Bruta / Abuso de Recursos** | Rate Limiting em memória/Redis gerenciado via `slowapi` (`5 req/min` em rotas de auth e processamento). | [`backend/app/api/deps.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/deps.py) |
 | **Vazamento de Segredos** | Auditoria de `.gitignore` cobrindo todas as variantes de `.env`, bancos SQLite e arquivos temporários. | [`.gitignore`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/.gitignore) |
 | **Ataques a Nível de Container** | Execução com usuário sem privilégios (`appuser:10001`), remoção de capabilities Linux (`cap_drop: ALL`) e banco isolado em rede interna. | [`docker-compose.prod.yml`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/docker-compose.prod.yml) |
-| **Clickjacking & MIME-sniffing** | Headers de segurança `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` e HSTS injetados pelo Caddy. | [`Caddyfile`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/Caddyfile) |
+| **Clickjacking & MIME-sniffing** | Headers de segurança `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` e proteção XSS injetados pelo Nginx. | [`frontend/nginx.conf`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/frontend/nginx.conf) |
+
 
 ---
 

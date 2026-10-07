@@ -16,7 +16,7 @@ function getClipVideoUrl(clipId, extraParam = '') {
     if (token) parts.push(`token=${encodeURIComponent(token)}`);
     if (extraParam) parts.push(extraParam);
     const qs = parts.length ? `?${parts.join('&')}` : '';
-    return `/api/v1/video/download/${encodeURIComponent(clipId)}${qs}`;
+    return `/api/videos/download/${encodeURIComponent(clipId)}${qs}`;
 }
 
 const UI = {
@@ -39,16 +39,10 @@ const UI = {
             
             const titleSafe = escapeHtml(clip.title);
             const hookSafe = escapeHtml(clip.hookReason);
-            const thumbSafe = escapeHtml(clip.thumbnail);
             
-            let mediaContent = `<img src="${thumbSafe}" alt="${titleSafe}">
-                                <div class="clip-overlay-play"><i class="fa-solid fa-play"></i></div>`;
-            
-            if (clip.id.startsWith('clip_')) {
-                // Vídeo real processado com token de autenticação
-                const videoUrl = getClipVideoUrl(clip.id);
-                mediaContent = `<video src="${videoUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
-            }
+            const videoUrl = getClipVideoUrl(clip.id);
+            const mediaContent = `<video src="${videoUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
+
 
             card.innerHTML = `
                 <div class="clip-preview-container" data-id="${escapeHtml(clip.id)}" style="aspect-ratio: ${cardRatio};">
@@ -94,14 +88,7 @@ const UI = {
             el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const clipId = el.getAttribute('data-id');
-                
-                // Previne mock downloads
-                if (!clipId.startsWith('clip_')) {
-                    alert('Este é apenas um clipe de demonstração (mock). Faça upload de um vídeo real para baixar o arquivo gerado!');
-                    return;
-                }
-
-                // Dispara o download diretamente pelo navegador autenticado
+                if (!clipId) return;
                 window.location.href = getClipVideoUrl(clipId);
             });
         });
@@ -144,24 +131,15 @@ const UI = {
             };
         }
 
-        // Limpar e reconstruir o video preview
-        if (clip.id.startsWith('clip_')) {
-            const videoUrl = getClipVideoUrl(clip.id);
-            videoContainer.innerHTML = `
-                <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                    <video id="editor-video-player" src="${videoUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
-                </div>
-            `;
-            updatePlayerAspect(currentRatio);
-        } else {
-            // Mock preview format (fallback)
-            videoContainer.innerHTML = `
-                <div class="video-player-mock">
-                    <i class="fa-solid fa-play play-icon"></i>
-                    <div class="mock-captions">Cole um link <span>acima</span></div>
-                </div>
-            `;
-        }
+        // Reconstruir o video preview real
+        const videoUrl = getClipVideoUrl(clip.id);
+        videoContainer.innerHTML = `
+            <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
+                <video id="editor-video-player" src="${videoUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
+            </div>
+        `;
+        updatePlayerAspect(currentRatio);
+
 
         transcriptContainer.innerHTML = '';
 
@@ -232,11 +210,6 @@ const UI = {
             btnExport.parentNode.replaceChild(newBtn, btnExport);
             
             newBtn.addEventListener('click', async () => {
-                if (!clip.id.startsWith('clip_')) {
-                    alert('Este é um clipe mockado. Para exportar, use um clipe real.');
-                    return;
-                }
-                
                 const originalText = newBtn.innerHTML;
                 newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando...';
                 newBtn.disabled = true;
@@ -249,7 +222,9 @@ const UI = {
                 const quality = document.getElementById('quality-select').value || '1080p';
                 
                 try {
-                    const res = await fetch(`/api/v1/project/clip/${clip.clipId || clip.id}/re-render`, {
+                    const clipIdentifier = clip.clipId || clip.id;
+                    const res = await fetch(`/api/projects/clip/${clipIdentifier}/re-render`, {
+
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',

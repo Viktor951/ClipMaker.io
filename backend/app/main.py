@@ -53,11 +53,22 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# Registrando Roteadores
-app.include_router(auth.router, prefix="/api/v1")
-app.include_router(video.router, prefix="/api/v1")
-app.include_router(project.router, prefix="/api/v1")
+# Registrando Roteadores (compatibilidade total: /api/auth, /api/videos, /api/projects e /api/v1)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+
+app.include_router(video.router, prefix="/api/video", tags=["video"])
+app.include_router(video.router, prefix="/api/videos", tags=["video"])
+app.include_router(video.router, prefix="/api/v1/video", tags=["video"])
+app.include_router(video.router, prefix="/api/v1/videos", tags=["video"])
+
+app.include_router(project.router, prefix="/api/project", tags=["project"])
+app.include_router(project.router, prefix="/api/projects", tags=["project"])
+app.include_router(project.router, prefix="/api/v1/project", tags=["project"])
+app.include_router(project.router, prefix="/api/v1/projects", tags=["project"])
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
     return {"status": "ok", "version": settings.VERSION}
+
