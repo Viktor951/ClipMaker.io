@@ -1,173 +1,179 @@
 # 🎬 ClipMaker.io
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-blue?logo=python&style=for-the-badge" alt="Python" />
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&style=for-the-badge" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-0.104-009688?logo=fastapi&style=for-the-badge" alt="FastAPI" />
   <img src="https://img.shields.io/badge/PostgreSQL-15-336791?logo=postgresql&style=for-the-badge" alt="PostgreSQL" />
   <img src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&style=for-the-badge" alt="Redis" />
   <img src="https://img.shields.io/badge/Nginx-1.25-009639?logo=nginx&style=for-the-badge" alt="Nginx" />
-  <img src="https://img.shields.io/badge/Docker-Production_Ready-2496ED?logo=docker&style=for-the-badge" alt="Docker" />
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&style=for-the-badge" alt="Docker" />
 </p>
 
-O **ClipMaker.io** é uma plataforma SaaS alimentada por Inteligência Artificial projetada para transformar vídeos longos do YouTube (ou uploads locais) em clipes curtos, dinâmicos e altamente virais, prontos para TikTok, Reels e Shorts.
+O **ClipMaker.io** é uma plataforma alimentada por Inteligência Artificial projetada para transformar vídeos longos (do YouTube ou uploads locais) em clipes curtos verticais (9:16) ou quadrados (1:1), altamente dinâmicos e prontos para publicação no TikTok, Instagram Reels e YouTube Shorts.
 
-O sistema orquestra tecnologias de ponta para analisar contexto, rastrear rostos via visão computacional e aplicar legendas dinâmicas sincronizadas palavra por palavra, operando de forma assíncrona para garantir alta performance e resiliência em produção.
+A plataforma automatiza todo o pipeline de pós-produção: transcrição de áudio, detecção de ganchos virais com IA, reenquadramento facial inteligente (face tracking) e renderização de legendas dinâmicas sincronizadas palavra por palavra.
 
 ---
 
 ## ✨ Principais Funcionalidades
 
-- 🧠 **Detecção de Virais com IA:** Transcrição veloz com **Faster-Whisper** e inteligência de ganchos (hook reason/viral score) via **Google Gemini**.
-- 🎯 **Face Tracking Automático:** Integração com **OpenCV** para identificar rostos e manter o sujeito centralizado na conversão para formato vertical (9:16) ou quadrado (1:1).
-- 💬 **Legendas Dinâmicas Embutidas:** Engine própria com **FFmpeg** que gera e queima legendas estilizadas palavra por palavra sincronizadas com o áudio.
-- 🚀 **Arquitetura Assíncrona & Worker Dedicado:** Fila gerenciada com **Redis e Huey**, permitindo processamento pesado sem bloquear requisições da API.
-- 🔒 **Segurança Corporativa:**
-  - Autenticação JWT com senhas hasheadas em Bcrypt.
-  - Rate Limiting integrado contra abusos.
-  - Proteção estrita contra SSRF em downloads por URL.
-  - CORS restrito, headers HTTP defensivos (nosniff, DENY framing).
-  - Execução segura em containers Docker com usuário não-root (`appuser`, UID 10001) e privilégios rebaixados (`cap_drop: ALL`).
+- 🧠 **Detecção Inteligente de Momentos Virais:** Transcrição veloz com **Faster-Whisper** e ranqueamento contextual de ganchos virais via **Google Gemini**.
+- 🎯 **Face Tracking Automático:** Detecção facial com **OpenCV** para manter o interlocutor centralizado no enquadramento vertical (9:16).
+- 💬 **Legendas Dinâmicas Sincronizadas:** Renderização de legendas palavra por palavra com estilos personalizáveis diretamente no vídeo via **FFmpeg**.
+- ⚡ **Processamento Assíncrono:** Fila de tarefas pesadas com **Huey** (Redis em produção e fallback para SQLite local em desenvolvimento).
+- 📱 **Editor de Clipes Integrado:** Ajuste fino de palavras, timing, estilo de legenda e aspect ratio direto no navegador.
+- 🛡️ **Segurança por Padrão:** Autenticação JWT com Bcrypt, queries parametrizadas (AsyncPG), proteção estrita contra SSRF em URLs externas, rate limiting e containers com usuário não-root.
 
 ---
 
 ## 🏗️ Arquitetura do Sistema
 
-```
+```text
                         [ Cliente / Navegador ]
                                   │
                                   ▼
-                 [ Reverse Proxy & Web / Nginx: 80 ]
-                  (Gzip, Headers Defensivos, SPA)
+                     [ Reverse Proxy (Nginx) ]
+                    Porta 80 / Gzip / Security Headers
                                   │
-                  ┌───────────────┴───────────────┐
-                  ▼                               ▼
-         / (Frontend Estático)            /api/* (Proxy HTTP)
-        [ VanillaJS & HTML5 ]                     │
-                    ▼
-         / (Frontend Estático)            /api/* (Proxy HTTP)
-        [ VanillaJS & HTML5 ]                     │
-                                                  ▼
-                                      [ API FastAPI (Uvicorn) ]
-                                      (Porta 8000 Interna)
-                                                  │
-                                  ┌───────────────┴───────────────┐
-                                  ▼                               ▼
-                        [ PostgreSQL 15 ]                  [ Redis 7 ]
-                      (Migrações Automáticas)            (Fila de Tarefas AOF)
-                                                                  ▲
-                                                                  │
-                                                      [ Worker Huey Consumer ]
-                                                      (Whisper + OpenCV + FFmpeg)
+                 ┌────────────────┴────────────────┐
+                 ▼                                 ▼
+         / (Frontend SPA)                 /api/* (Proxy HTTP)
+        [ HTML5 / CSS / JS ]                       │
+                                                   ▼
+                                       [ API FastAPI (Uvicorn) ]
+                                                   │
+                                   ┌───────────────┴───────────────┐
+                                   ▼                               ▼
+                          [ PostgreSQL 15 ]                   [ Redis 7 ]
+                         (Dados e Projetos)               (Fila de Tarefas)
+                                                                   │
+                                                                   ▼
+                                                         [ Worker Huey ]
+                                                   (Whisper + OpenCV + FFmpeg)
 ```
 
 ---
 
-## 📂 Estrutura de Diretórios
+## 🚀 Como Executar
 
-```text
-.
-├── backend/
-│   ├── app/
-│   │   ├── api/routers/      # Endpoints REST (auth.py, video.py, project.py)
-│   │   ├── core/             # Configurações centralizadas, logging JSON e segurança JWT
-│   │   ├── db/               # Conexões assíncronas com AsyncPG e queries seguras
-│   │   ├── models/           # Schemas tipados com Pydantic v2
-│   │   ├── services/         # IA (Whisper/Gemini), Visão Computacional e FFmpeg
-│   │   └── worker/           # Tasks assíncronas do Huey Consumer
-│   └── requirements.txt      # Dependências pinadas de produção
-├── frontend/                 # Interface Web Vanilla (HTML5, CSS moderno, JS)
-├── migrations/               # Scripts SQL versionados e idempotentes (001_init.sql)
-├── scripts/                  # Automação de setup, migração e rotinas de limpeza
-├── tests/                    # Suíte de testes automatizados e segurança
-├── Dockerfile                # Multi-stage build otimizado com usuário não-root
-├── docker-compose.prod.yml   # Stack completa de produção com limites e saúde
-└── README-DEPLOY.md          # Guia operacional detalhado (incluindo persistência no Disco D:)
-```
+### Pré-requisitos
+- [Docker](https://www.docker.com/) e Docker Compose (para execução em containers) **OU**
+- [Python 3.10+](https://www.python.org/) e [FFmpeg](https://ffmpeg.org/) (para execução local)
+- Chave de API do [Google AI Studio](https://aistudio.google.com/) (Gemini)
 
 ---
 
-## ⚡ Início Rápido (Produção)
+### Opção 1: Execução com Docker (Recomendada para Produção)
 
-### 1. Inicialize as Variáveis de Ambiente e Pastas
-Execute o script de automação para gerar credenciais criptográficas fortes e criar as pastas persistentes:
+1. **Clone o repositório:**
+   ```bash
+   git clone https://github.com/Viktor951/ClipMaker.io.git
+   cd ClipMaker.io
+   ```
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1
-```
+2. **Configure as variáveis de ambiente:**
+   Copie o arquivo de exemplo e preencha sua chave do Gemini:
+   ```bash
+   cp .env.example .env
+   ```
+   > No Windows (PowerShell), você pode executar `powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1` para gerar chaves criptográficas fortes e criar as pastas persistentes automaticamente.
 
-> Edite o arquivo `.env` gerado para inserir sua chave `GEMINI_API_KEY` do Google AI Studio e ajustar o `DOMAIN` (padrão: `localhost`).
+3. **Inicie os containers:**
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d --build
+   ```
 
-### 2. Suba a Stack Completa
-```powershell
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-O compose executa automaticamente:
-1. Subida do PostgreSQL e Redis com healthchecks ativos.
-2. Execução transacional das migrações de banco (`migrations/001_init.sql`).
-3. Inicialização da API FastAPI, Worker de IA, Container de Limpeza e Frontend/Reverse Proxy Nginx.
-
-### 3. Acesso à Aplicação
-- **Aplicação Web:** Acesse [http://localhost](http://localhost) (ou seu domínio configurado).
-- **Verificação de Saúde:** [http://localhost/api/health](http://localhost/api/health) ou [http://localhost/health](http://localhost/health)
+4. **Acesse a aplicação:**
+   - Web: [http://localhost](http://localhost)
+   - Verificação de Saúde da API: [http://localhost/api/health](http://localhost/api/health)
 
 ---
 
-## 🛡️ Matriz de Segurança e Proteções Ativas
+### Opção 2: Desenvolvimento Local (sem Docker)
 
-| Vetor de Ataque / Risco | Mecanismo de Mitigação | Componente / Arquivo |
-| :--- | :--- | :--- |
-| **SSRF (Server-Side Request Forgery)** | Validação de scheme (`http`/`https`), bloqueio de IPs privados/loopback/cloud metadata e bloqueio de DNS para nomes de containers Docker internos. | [`backend/app/api/routers/video.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/routers/video.py) |
-| **Injeção de Comandos (CLI Injection)** | Argumentos do `yt-dlp` e `ffmpeg` passados como lista sanitizada com separador de parâmetros `--` para impedir injeção de flags maliciosas. | [`backend/app/services/video_service.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/services/video_service.py) |
-| **SQL Injection (SQLi)** | Consultas 100% parametrizadas via `AsyncPG` (`$1, $2, ...`) e blocos transacionais controlados. Sem interpolação de strings. | [`backend/app/db/db_service.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/db/db_service.py) |
-| **Path Traversal / LFI** | Nomes de arquivos gerados como UUIDv4 e uso estrito de `os.path.basename()` em endpoints de download. | [`backend/app/api/routers/video.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/routers/video.py) |
-| **XSS (Cross-Site Scripting)** | Higienização de strings dinâmicas no frontend antes da injeção no DOM com `escapeHtml()`. | [`frontend/js/ui.js`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/frontend/js/ui.js) |
-| **Força Bruta / Abuso de Recursos** | Rate Limiting em memória/Redis gerenciado via `slowapi` (`5 req/min` em rotas de auth e processamento). | [`backend/app/api/deps.py`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/backend/app/api/deps.py) |
-| **Vazamento de Segredos** | Auditoria de `.gitignore` cobrindo todas as variantes de `.env`, bancos SQLite e arquivos temporários. | [`.gitignore`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/.gitignore) |
-| **Ataques a Nível de Container** | Execução com usuário sem privilégios (`appuser:10001`), remoção de capabilities Linux (`cap_drop: ALL`) e banco isolado em rede interna. | [`docker-compose.prod.yml`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/docker-compose.prod.yml) |
-| **Clickjacking & MIME-sniffing** | Headers de segurança `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` e proteção XSS injetados pelo Nginx. | [`frontend/nginx.conf`](file:///c:/Users/Jo%C3%A3o%20Victor/Documents/Antigravity%20Projects/ClipMakerAI/frontend/nginx.conf) |
+O backend possui suporte a fallback para SQLite em desenvolvimento, permitindo testar e desenvolver rapidamente sem precisar subir PostgreSQL ou Redis:
 
+1. **Crie e ative um ambiente virtual:**
+   ```bash
+   python -m venv venv
+   # Linux/macOS:
+   source venv/bin/activate
+   # Windows:
+   .\venv\Scripts\activate
+   ```
+
+2. **Instale as dependências:**
+   ```bash
+   pip install -r backend/requirements.txt
+   pip install -r requirements-dev.txt
+   ```
+
+3. **Configure o `.env`:**
+   ```bash
+   cp .env.example .env
+   # Preencha a GEMINI_API_KEY no arquivo .env
+   ```
+
+4. **Inicie a API:**
+   ```bash
+   uvicorn backend.app.main:app --reload --port 8000
+   ```
+   > Em modo local, acesse [http://localhost:8000](http://localhost:8000). O FastAPI serve a interface estática automaticamente.
+
+5. **(Opcional) Inicie o worker de processamento:**
+   ```bash
+   huey_consumer backend.app.worker.worker.huey -w 1 -k thread
+   ```
 
 ---
 
 ## 🧪 Testes Automatizados
 
-A suíte cobre autenticação, ciclo de vida de JWT, proteção anti-SSRF, proporções de vídeo e formatação de legendas.
+A suíte de testes valida rotas da API, autenticação, persistência e verificações de segurança:
 
-### Executar Localmente com Pytest:
 ```bash
-pip install -r backend/requirements.txt
-pip install -r requirements-dev.txt
 pytest -v
 ```
 
-### Executar no Container Docker (com imagem de produção):
-```bash
-docker run --rm -v "${PWD}:/app" clipmakerai:prod python -c "
+---
 
-from tests.test_core_and_security import (
-    test_password_hashing,
-    test_jwt_token_lifecycle,
-    test_anti_ssrf_url_validation,
-    test_video_crop_and_scale_dimensions,
-    test_srt_timestamp_formatting
-)
-test_password_hashing()
-test_jwt_token_lifecycle()
-test_anti_ssrf_url_validation()
-test_video_crop_and_scale_dimensions()
-test_srt_timestamp_formatting()
-print('✅ Todos os testes de segurança e processamento passaram com sucesso!')
-"
+## ⚙️ Variáveis de Ambiente
+
+| Variável | Descrição | Padrão |
+| :--- | :--- | :--- |
+| `GEMINI_API_KEY` | Chave de API do Google Gemini (análise e ranqueamento de clipes) | Obrigatório |
+| `SECRET_KEY` | Chave secreta para assinatura dos tokens JWT | Obrigatório |
+| `ENVIRONMENT` | Ambiente de execução (`production` ou `development`) | `production` |
+| `DOMAIN` | Domínio configurado para o proxy Nginx | `localhost` |
+| `DATA_ROOT` | Caminho de armazenamento persistente para vídeos e cache | `D:/docker-data/clipmaker` |
+| `POSTGRES_USER` / `PASSWORD` | Credenciais de acesso ao PostgreSQL | `clipmaker` |
+| `REDIS_PASSWORD` | Senha de autenticação do Redis | Obrigatório |
+
+---
+
+## 📂 Estrutura do Projeto
+
+```text
+.
+├── backend/
+│   ├── app/
+│   │   ├── api/routers/      # Endpoints REST (auth, projects, videos)
+│   │   ├── core/             # Configurações, JWT e logging estruturado
+│   │   ├── db/               # Camada de dados (AsyncPG e fallback SQLite)
+│   │   ├── models/           # Schemas Pydantic v2
+│   │   ├── services/         # Serviços de IA (Whisper/Gemini), OpenCV e FFmpeg
+│   │   └── worker/           # Tasks assíncronas do Huey Consumer
+│   └── requirements.txt      # Dependências do backend
+├── frontend/                 # Interface Web (HTML5, CSS moderno e Vanilla JS)
+├── migrations/               # Migrações SQL idempotentes do banco de dados
+├── scripts/                  # Scripts de automação (setup, limpeza)
+├── tests/                    # Suíte de testes automatizados com pytest
+├── docker-compose.prod.yml   # Orquestração completa de produção
+└── README-DEPLOY.md          # Guia operacional avançado (backup, disco host, etc.)
 ```
 
 ---
 
-## 💾 Persistência de Dados no Disco D:
-O projeto está configurado para salvar arquivos pesados (vídeos enviados, clipes renderizados, cache de modelos Whisper e persistência do Redis) diretamente no diretório:
-- `D:\docker-data\clipmaker\`
+## 📄 Licença
 
-Consulte o [README-DEPLOY.md](README-DEPLOY.md) para detalhes sobre backup, recuperação e movimentação do disco de dados do Docker Desktop.
-
----
-
-<p align="center">Construído com excelência técnica e foco em produção 🚀</p>
+Distribuído sob a licença [MIT](LICENSE).

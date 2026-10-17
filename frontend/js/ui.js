@@ -19,6 +19,12 @@ function getClipVideoUrl(clipId, extraParam = '') {
     return `/api/videos/download/${encodeURIComponent(clipId)}${qs}`;
 }
 
+function getClipThumbnailUrl(clipId) {
+    const token = localStorage.getItem('clipmaker_token') || '';
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    return `/api/videos/thumbnail/${encodeURIComponent(clipId)}${qs}`;
+}
+
 const UI = {
     currentClip: null,
     playbackTimer: null,
@@ -34,36 +40,37 @@ const UI = {
             const card = document.createElement('div');
             card.className = 'clip-card';
             
-            const scoreClass = clip.viralScore >= 90 ? 'viral-score-high' : 'viral-score-med';
+            const scoreClass = (clip.viralScore || 0) >= 90 ? 'viral-score-high' : 'viral-score-med';
             const cardRatio = clip.aspectRatio === '16:9' ? '16/9' : (clip.aspectRatio === '1:1' ? '1/1' : '9/16');
             
-            const titleSafe = escapeHtml(clip.title);
-            const hookSafe = escapeHtml(clip.hookReason);
+            const titleSafe = escapeHtml(clip.title || 'Clipe Gerado (IA)');
+            const hookSafe = escapeHtml(clip.hookReason || '');
             
-            const videoUrl = getClipVideoUrl(clip.id);
-            const mediaContent = `<video src="${videoUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
-
+            const clipIdentifier = clip.clipId || clip.id;
+            const videoUrl = getClipVideoUrl(clipIdentifier);
+            const thumbnailUrl = getClipThumbnailUrl(clipIdentifier);
+            const mediaContent = `<video src="${videoUrl}" poster="${thumbnailUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
 
             card.innerHTML = `
-                <div class="clip-preview-container" data-id="${escapeHtml(clip.id)}" style="aspect-ratio: ${cardRatio};">
+                <div class="clip-preview-container" data-id="${escapeHtml(clipIdentifier)}" style="aspect-ratio: ${cardRatio};">
                     ${mediaContent}
                     <div class="clip-badges">
                         <div class="viral-badge ${scoreClass}">
-                            <i class="fa-solid fa-fire"></i> ${Number(clip.viralScore)}/100
+                            <i class="fa-solid fa-fire"></i> ${Number(clip.viralScore || 0)}/100
                         </div>
-                        <div class="clip-duration">${escapeHtml(clip.duration)}</div>
+                        <div class="clip-duration">${escapeHtml(clip.duration || '')}</div>
                     </div>
                 </div>
                 <div class="clip-details">
                     <div>
-                        <h3 class="clip-card-title">${clip.id.startsWith('clip_') ? 'Seu Clipe Gerado (IA)' : titleSafe}</h3>
-                        <p class="clip-card-hook">${clip.id.startsWith('clip_') ? 'Gancho otimizado e cortes precisos feitos pela inteligência artificial.' : hookSafe}</p>
+                        <h3 class="clip-card-title">${titleSafe}</h3>
+                        <p class="clip-card-hook">${hookSafe}</p>
                     </div>
                     <div class="clip-card-actions">
-                        <button class="btn-secondary btn-sm block btn-edit" data-id="${escapeHtml(clip.id)}">
+                        <button class="btn-secondary btn-sm block btn-edit" data-id="${escapeHtml(clipIdentifier)}">
                             <i class="fa-solid fa-pen-to-square"></i> Editar Clipe
                         </button>
-                        <button class="btn-primary btn-sm block btn-download" data-id="${escapeHtml(clip.id)}">
+                        <button class="btn-primary btn-sm block btn-download" data-id="${escapeHtml(clipIdentifier)}">
                             <i class="fa-solid fa-download"></i> Baixar
                         </button>
                     </div>
@@ -77,7 +84,7 @@ const UI = {
         container.querySelectorAll('.btn-edit').forEach(el => {
             el.addEventListener('click', () => {
                 const clipId = el.getAttribute('data-id');
-                const clip = clips.find(c => c.id === clipId);
+                const clip = clips.find(c => (c.clipId === clipId || c.id === clipId));
                 if (clip) {
                     UI.openEditorModal(clip);
                 }
@@ -101,6 +108,8 @@ const UI = {
         const videoContainer = document.querySelector('.video-preview-container');
         
         if (!modal || !transcriptContainer) return;
+
+        const clipIdentifier = clip.clipId || clip.id;
 
         // Configuração de Aspect Ratio
         const aspectSelect = document.getElementById('aspect-ratio-select');
@@ -132,14 +141,14 @@ const UI = {
         }
 
         // Reconstruir o video preview real
-        const videoUrl = getClipVideoUrl(clip.id);
+        const videoUrl = getClipVideoUrl(clipIdentifier);
+        const thumbnailUrl = getClipThumbnailUrl(clipIdentifier);
         videoContainer.innerHTML = `
             <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                <video id="editor-video-player" src="${videoUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
+                <video id="editor-video-player" src="${videoUrl}" poster="${thumbnailUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
             </div>
         `;
         updatePlayerAspect(currentRatio);
-
 
         transcriptContainer.innerHTML = '';
 
@@ -203,7 +212,7 @@ const UI = {
             });
         }
 
-        // Export logic
+        // Export logic com polling de conclusão
         const btnExport = document.getElementById('btn-export-clip');
         if (btnExport) {
             const newBtn = btnExport.cloneNode(true);
@@ -211,7 +220,7 @@ const UI = {
             
             newBtn.addEventListener('click', async () => {
                 const originalText = newBtn.innerHTML;
-                newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando...';
+                newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Solicitando re-render...';
                 newBtn.disabled = true;
                 
                 const style = document.getElementById('caption-style-select').value || 'Yellow';
@@ -222,9 +231,7 @@ const UI = {
                 const quality = document.getElementById('quality-select').value || '1080p';
                 
                 try {
-                    const clipIdentifier = clip.clipId || clip.id;
                     const res = await fetch(`/api/projects/clip/${clipIdentifier}/re-render`, {
-
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
@@ -241,10 +248,41 @@ const UI = {
                         })
                     });
                     
-                    if (!res.ok) throw new Error('Erro na renderização');
+                    if (!res.ok) {
+                        let errDetail = 'Erro na solicitação de renderização';
+                        try {
+                            const errData = await res.json();
+                            if (errData.detail) errDetail = errData.detail;
+                        } catch (e) {}
+                        throw new Error(errDetail);
+                    }
                     
-                    const refreshedUrl = getClipVideoUrl(clip.id, `t=${Date.now()}`);
-                    // Baixar automaticamente
+                    newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando vídeo...';
+
+                    // Polling do status do clipe até COMPLETED
+                    let pollSuccess = false;
+                    for (let attempt = 0; attempt < 60; attempt++) {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        const statusRes = await fetch(`/api/projects/clip/${clipIdentifier}/status`, {
+                            headers: { 'Authorization': `Bearer ${localStorage.getItem('clipmaker_token')}` }
+                        });
+                        if (!statusRes.ok) continue;
+                        const statusData = await statusRes.json();
+                        if (statusData.status === 'COMPLETED') {
+                            pollSuccess = true;
+                            break;
+                        }
+                        if (statusData.status === 'FAILED') {
+                            throw new Error(statusData.error || 'Falha durante o processamento do clipe.');
+                        }
+                    }
+
+                    if (!pollSuccess) {
+                        throw new Error('Tempo limite de renderização atingido. Tente novamente mais tarde.');
+                    }
+                    
+                    const refreshedUrl = getClipVideoUrl(clipIdentifier, `t=${Date.now()}`);
+                    // Baixar automaticamente apenas após conclusão confirmada
                     window.location.href = refreshedUrl;
                     
                     // Recarregar preview
@@ -261,7 +299,7 @@ const UI = {
                     updatePlayerAspect(aspectRatio);
 
                     // Atualiza o card de preview na listagem principal
-                    const cardPreview = document.querySelector(`.clip-preview-container[data-id="${clip.id}"]`);
+                    const cardPreview = document.querySelector(`.clip-preview-container[data-id="${clipIdentifier}"]`);
                     if (cardPreview) {
                         const newCardRatio = aspectRatio === '16:9' ? '16/9' : (aspectRatio === '1:1' ? '1/1' : '9/16');
                         cardPreview.style.aspectRatio = newCardRatio;
@@ -282,7 +320,7 @@ const UI = {
         modal.classList.remove('hidden');
         if (!history.state || history.state.page !== 'editor') {
             const currentUrl = new URL(window.location.href);
-            history.pushState({ page: 'editor', clipId: clip.id }, '', currentUrl.toString());
+            history.pushState({ page: 'editor', clipId: clipIdentifier }, '', currentUrl.toString());
         }
     },
 

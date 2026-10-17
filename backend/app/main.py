@@ -1,3 +1,4 @@
+import os
 import logging
 
 from fastapi import FastAPI, Request
@@ -49,8 +50,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # Registrando Roteadores (compatibilidade total: /api/auth, /api/videos, /api/projects e /api/v1)
@@ -72,18 +73,15 @@ app.include_router(project.router, prefix="/api/v1/projects", tags=["project"])
 def health_check():
     return {"status": "ok", "version": settings.VERSION}
 
-# Servindo frontend estático (desenvolvimento e execução integrada)
-from pathlib import Path
-from fastapi.staticfiles import StaticFiles
-from fastapi import WebSocket
+# Servindo frontend estático opcionalmente em modo de desenvolvimento integrado
+if os.getenv("SERVE_FRONTEND", "false").lower() in ("true", "1"):
+    import os
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
 
-@app.websocket("/{full_path:path}")
-async def dummy_ws(websocket: WebSocket, full_path: str):
-    await websocket.close()
-
-_frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
-if _frontend_dir.exists() and (_frontend_dir / "index.html").exists():
-    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
+    _frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
+    if _frontend_dir.exists() and (_frontend_dir / "index.html").exists():
+        app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
 
 
 

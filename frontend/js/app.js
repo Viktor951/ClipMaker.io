@@ -276,12 +276,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let isProcessing = false;
     let pollingInterval = null;
+    let pollingTimeout = null;
+    let currentRenderedProjectId = null;
 
     function stopPolling() {
         if (pollingInterval) {
             clearInterval(pollingInterval);
             pollingInterval = null;
         }
+        if (pollingTimeout) {
+            clearTimeout(pollingTimeout);
+            pollingTimeout = null;
+        }
+        const errContainer = document.getElementById('polling-error-container');
+        if (errContainer) errContainer.remove();
     }
 
     function resetUIState() {
@@ -390,11 +398,18 @@ document.addEventListener('DOMContentLoaded', () => {
         stopPolling();
         const percentageEl = document.getElementById('processing-percentage');
         const progressFill = document.getElementById('progress-fill');
+        const processingSection = document.getElementById('processing-section');
         let consecutiveFailures = 0;
 
+        const scheduleNext = (delayMs) => {
+            if (!isProcessing) return;
+            pollingTimeout = setTimeout(checkStatus, delayMs);
+        };
+
         const checkStatus = async () => {
+            if (!isProcessing) return;
             try {
-                const res = await fetch(`${API_BASE}/projects/${projectId}/status?_t=${Date.now()}`, {
+                const res = await fetch(`${API_BASE}/projects/${projectId}/status`, {
                     headers: { "Authorization": `Bearer ${authToken}` }
                 });
 
@@ -412,12 +427,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     throw new Error(`Falha ao checar status (${res.status})`);
                 }
+
                 consecutiveFailures = 0;
+                const existingErr = document.getElementById('polling-error-container');
+                if (existingErr) existingErr.remove();
+
                 const data = await res.json();
                 const finalTitle = data.title || sourceName || "Projeto Salvo";
 
                 if (data.status === 'READY') {
                     stopPolling();
+                    currentRenderedProjectId = projectId;
                     if (percentageEl) {
                         percentageEl.classList.remove('pulse-animation');
                         percentageEl.innerText = "100%";
@@ -458,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (progressFill) progressFill.style.width = '35%';
                     } else if (data.status === 'ANALYZING') {
                         updateStepUI(2);
-                        if (percentageEl) percentageEl.innerText = "🔍 Detectando momentos virais com Gemini Pro...";
+                        if (percentageEl) percentageEl.innerText = "🔍 Detectando momentos virais com IA...";
                         if (progressFill) progressFill.style.width = '65%';
                     } else if (data.status === 'RENDERING') {
                         updateStepUI(3);
@@ -475,22 +495,54 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         if (progressFill) progressFill.style.width = '20%';
                     }
+                    scheduleNext(3000);
                 }
             } catch (err) {
-                console.error(err);
+                console.error("Falha no polling:", err);
                 consecutiveFailures++;
                 if (consecutiveFailures >= 5) {
                     stopPolling();
-                    if (percentageEl) percentageEl.classList.remove('pulse-animation');
-                    alert("Conexão instável com o servidor. O vídeo continua processando em segundo plano.");
+                    if (percentageEl) {
+                        percentageEl.classList.remove('pulse-animation');
+                        percentageEl.innerText = "Falha de conexão";
+                    }
+                    let errContainer = document.getElementById('polling-error-container');
+                    if (!errContainer && processingSection) {
+                        errContainer = document.createElement('div');
+                        errContainer.id = 'polling-error-container';
+                        errContainer.style.cssText = 'text-align: center; margin-top: 1.5rem; padding: 1.25rem; background: rgba(239, 68, 68, 0.1); border-radius: var(--radius-md); border: 1px solid var(--danger, #ef4444);';
+                        errContainer.innerHTML = `
+                            <p style="color: var(--danger, #ef4444); font-weight: 500; margin-bottom: 1rem;">
+                                Conexão instável. Não foi possível consultar o status do projeto após 5 tentativas consecutivas.
+                            </p>
+                            <div style="display: flex; gap: 0.75rem; justify-content: center;">
+                                <button id="btn-retry-poll" class="btn-primary btn-sm">Tentar novamente</button>
+                                <button id="btn-cancel-poll" class="btn-secondary btn-sm">Voltar ao início</button>
+                            </div>
+                        `;
+                        processingSection.appendChild(errContainer);
+
+                        document.getElementById('btn-retry-poll')?.addEventListener('click', () => {
+                            errContainer.remove();
+                            isProcessing = true;
+                            pollProjectStatus(projectId, sourceName);
+                        });
+
+                        document.getElementById('btn-cancel-poll')?.addEventListener('click', () => {
+                            errContainer.remove();
+                            stopPolling();
+                            switchView('home');
+                            resetUIState();
+                        });
+                    }
+                } else {
+                    const backoffMs = Math.min(15000, 2000 * Math.pow(1.5, consecutiveFailures));
+                    scheduleNext(backoffMs);
                 }
             }
         };
 
-        await checkStatus();
-        if (pollingInterval === null && isProcessing) {
-            pollingInterval = setInterval(checkStatus, 3000);
-        }
+        checkStatus();
     }
 
     async function loadProject(projectId, sourceName, options = { pushHistory: false, replaceHistory: false }) {
@@ -506,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const res = await fetch(`${API_BASE}/projects/${projectId}/status?_t=${Date.now()}`, {
+            const res = await fetch(`${API_BASE}/projects/${projectId}/status`, {
                 headers: { "Authorization": `Bearer ${authToken}` }
             });
 
@@ -539,6 +591,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.status === 'READY') {
                 stopPolling();
+                currentRenderedProjectId = projectId;
                 switchView('results');
                 const sourceEl = document.querySelector('.source-name');
                 if (sourceEl) sourceEl.innerText = finalTitle;
@@ -634,6 +687,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
         const projectIdFromUrl = urlParams.get('project');
         const activeProject = projectIdFromUrl || (state && state.projectId);
+
+        const resultsSection = document.getElementById('results-section');
+        const isResultsVisible = resultsSection && !resultsSection.classList.contains('hidden');
+
+        // Ignora transição editor -> results se o projeto já estiver carregado e exibido
+        if (activeProject && isResultsVisible && currentRenderedProjectId === activeProject) {
+            return;
+        }
 
         if (activeProject) {
             const sourceName = (state && state.sourceName) || localStorage.getItem('clipmaker_active_source_name') || 'Vídeo';

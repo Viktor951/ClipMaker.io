@@ -357,7 +357,7 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
                 "-i", input_path,
                 "-filter_complex", filter_complex,
                 "-map", "[v]",
-                "-map", "0:a",
+                "-map", "0:a?",
             ]
             for k, v in cpu_params.items():
                 fallback_cmd.extend([f"-{k}", str(v)])
@@ -393,7 +393,7 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
         "-i", input_path,
         "-filter_complex", filter_complex,
         "-map", "[v]",
-        "-map", "0:a",
+        "-map", "0:a?",
     ]
     
     for k, v in encoding_params.items():
@@ -509,7 +509,7 @@ def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, sta
         "-i", source_path,
         "-filter_complex", filter_complex,
         "-map", "[v]",
-        "-map", "0:a",
+        "-map", "0:a?",
     ]
     for k, v in encoding_params.items():
         base_cmd.extend([f"-{k}", str(v)])
@@ -519,3 +519,31 @@ def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, sta
         _run_ffmpeg_with_fallback(base_cmd, filter_complex, start_sec, end_sec, source_path, output_path)
     except Exception as e:
         raise RuntimeError(f"Erro no extract_and_crop: {str(e)}")
+
+
+def generate_thumbnail(video_path: str, timestamp_sec: float, output_thumb_path: str) -> str:
+    """Extrai um frame real do vídeo com ffmpeg (~1s), redimensionado para ~480px."""
+    safe_time = max(0.0, float(timestamp_sec))
+    cmd = _ffmpeg_base() + [
+        "-ss", str(safe_time),
+        "-i", video_path,
+        "-vframes", "1",
+        "-vf", "scale='min(480,iw)':-1",
+        "-q:v", "3",
+        output_thumb_path
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if res.returncode != 0 or not os.path.exists(output_thumb_path) or os.path.getsize(output_thumb_path) == 0:
+            fallback_cmd = _ffmpeg_base() + [
+                "-ss", "0.0",
+                "-i", video_path,
+                "-vframes", "1",
+                "-vf", "scale='min(480,iw)':-1",
+                "-q:v", "3",
+                output_thumb_path
+            ]
+            subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=60)
+    except Exception as e:
+        logger.warning(f"Falha ao gerar thumbnail: {e}")
+    return output_thumb_path

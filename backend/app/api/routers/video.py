@@ -69,6 +69,9 @@ async def process_video(
     aspect_ratio: str = Form("9:16"),
     current_user: dict = Depends(get_current_user)
 ):
+    if aspect_ratio not in ("9:16", "1:1", "16:9"):
+        raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
+
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_FILE_SIZE:
         raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {settings.MAX_FILE_SIZE_MB}MB).")
@@ -132,6 +135,9 @@ async def process_url(
     aspect_ratio: str = Form("9:16"),
     current_user: dict = Depends(get_current_user)
 ):
+    if aspect_ratio not in ("9:16", "1:1", "16:9"):
+        raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
+
     clean_url = url.strip()
     if not _is_safe_public_url(clean_url):
         raise HTTPException(status_code=400, detail="URL inválida ou não permitida.")
@@ -225,4 +231,34 @@ async def download_clip(clip_id: str, current_user: dict = Depends(get_current_u
         path=str(file_path),
         media_type="video/mp4",
         headers={"Content-Disposition": f'inline; filename="{safe_id}"'}
+    )
+
+
+@router.get("/thumbnail/{clip_id}")
+async def get_thumbnail(clip_id: str, current_user: dict = Depends(get_current_user)):
+    safe_id = os.path.basename(clip_id)
+
+    real_id = safe_id
+    if real_id.startswith("clip_") or real_id.startswith("thumb_"):
+        real_id = real_id[real_id.find("_") + 1:]
+    if real_id.endswith(".mp4") or real_id.endswith(".jpg"):
+        real_id = real_id[:real_id.rfind(".")]
+
+    clip_record = await get_clip(real_id)
+    if not clip_record:
+        raise HTTPException(status_code=404, detail="Registro do clipe não encontrado.")
+
+    project = await get_project_with_clips(clip_record["projectid"])
+    if not project or str(project["userid"]) != str(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    thumb_key = clip_record.get("thumbnail_key") or f"thumb_{real_id}.jpg"
+    thumb_path = TEMP_DIR / thumb_key
+    if not thumb_path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo de miniatura não encontrado.")
+
+    return FileResponse(
+        path=str(thumb_path),
+        media_type="image/jpeg",
+        headers={"Content-Disposition": f'inline; filename="{thumb_key}"'}
     )

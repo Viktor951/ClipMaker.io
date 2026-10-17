@@ -177,7 +177,18 @@ TRANSCRIÇÃO DO VÍDEO:
                     en = float(c.get("end_time", duration))
                     ti = c.get("title", "Clipe Viral")
                     ho = c.get("hook_text", "")
-                    clip_boundaries.append((st, en, ti, ho))
+                    try:
+                        vs = int(c.get("viral_score", 85))
+                    except (ValueError, TypeError):
+                        vs = 85
+                    vs = max(0, min(100, vs))
+                    clip_boundaries.append({
+                        "start": st,
+                        "end": en,
+                        "title": ti,
+                        "hook": ho,
+                        "viral_score": vs
+                    })
                     
                 logger.info(f"{len(clip_boundaries)} clipe(s) retornado(s) pelo LLM ({model_name}).")
                 return clip_boundaries
@@ -207,12 +218,25 @@ def _fallback_clip_boundaries(duration: float) -> list:
     clip_boundaries = []
     clip_duration = 75.0
     if duration <= clip_duration:
-        clip_boundaries.append((0.0, duration, "Clipe Completo", "Gancho inicial"))
+        clip_boundaries.append({
+            "start": 0.0,
+            "end": duration,
+            "title": "Clipe Completo",
+            "hook": "Gancho inicial",
+            "viral_score": 85
+        })
     else:
         num_clips = min(int(duration // clip_duration) or 1, 6)
         step = (duration - clip_duration) / max(1, num_clips - 1) if num_clips > 1 else 0
         for i in range(num_clips):
             start = i * step
             end = min(start + clip_duration, duration)
-            clip_boundaries.append((start, end, f"Momento {i+1}", "Trecho relevante"))
+            score = max(50, 95 - i * 8)
+            clip_boundaries.append({
+                "start": start,
+                "end": end,
+                "title": f"Momento {i+1}",
+                "hook": "Trecho relevante",
+                "viral_score": score
+            })
     return clip_boundaries

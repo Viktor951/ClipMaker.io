@@ -166,6 +166,7 @@ class SqliteBackend:
                 errorMessage TEXT,
                 captionConfig TEXT,
                 wordsJson TEXT,
+                thumbnail_key TEXT,
                 createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(projectId) REFERENCES projects(id) ON DELETE CASCADE
@@ -182,6 +183,10 @@ class SqliteBackend:
         """)
         try:
             await self._conn.execute("ALTER TABLE clips ADD COLUMN wordsJson TEXT;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE clips ADD COLUMN thumbnail_key TEXT;")
         except Exception:
             pass
         await self._conn.commit()
@@ -227,6 +232,7 @@ async def get_backend():
 
     db_url = settings.DATABASE_URL
     is_sqlite = db_url.startswith("sqlite") or db_url.endswith(".db")
+    allow_sqlite = os.getenv("ALLOW_SQLITE_FALLBACK", "false").lower() in ("true", "1") and settings.ENVIRONMENT != "production"
 
     if not is_sqlite and (db_url.startswith("postgres://") or db_url.startswith("postgresql://")):
         try:
@@ -236,18 +242,33 @@ async def get_backend():
             logger.info("Conexão com PostgreSQL estabelecida com sucesso.")
             return backend
         except Exception as e:
-            if settings.ENVIRONMENT == "production" and os.getenv("STRICT_PROD") == "true":
-                logger.error(f"Falha crítica ao conectar no PostgreSQL de produção: {e}")
-                raise
+            if not allow_sqlite:
+                logger.critical(f"Falha ao conectar no PostgreSQL: {e}")
+                raise RuntimeError(
+                    f"PostgreSQL indisponível ({e}). Em produção ou sem permissão explícita, "
+                    f"a aplicação falha imediatamente. Para testes/dev local sem banco, use ALLOW_SQLITE_FALLBACK=true."
+                ) from e
             logger.warning(
-                f"PostgreSQL indisponível ({e}). Alternando para SQLite local (dev.db) para desenvolvimento/testes."
+                f"[AVISO] PostgreSQL indisponível ({e}). ALLOW_SQLITE_FALLBACK=true ativado: utilizando SQLite local (dev.db)."
+            )
+    elif is_sqlite:
+        if not allow_sqlite:
+            raise RuntimeError(
+                "DATABASE_URL SQLite configurada, mas ALLOW_SQLITE_FALLBACK não está habilitada. "
+                "Defina ALLOW_SQLITE_FALLBACK=true para utilizar SQLite fora de produção."
+            )
+        logger.warning("[AVISO] ALLOW_SQLITE_FALLBACK=true ativado: utilizando SQLite local (dev.db).")
+    else:
+        if not allow_sqlite:
+            raise RuntimeError(
+                f"DATABASE_URL inválida ou não configurada ({db_url}). Configure o PostgreSQL ou ative ALLOW_SQLITE_FALLBACK=true."
             )
 
     dev_db_path = str(Path(__file__).resolve().parent.parent.parent.parent / "dev.db")
     backend = SqliteBackend(dev_db_path)
     await backend.connect()
     _backends[loop] = backend
-    logger.info("Conexão com SQLite local (dev.db) estabelecida com sucesso.")
+    logger.warning("[AVISO] Conexão com SQLite local (dev.db) estabelecida com sucesso.")
     return backend
 
 
@@ -337,6 +358,7 @@ async def get_project_with_clips(project_id: str) -> Optional[Dict[str, Any]]:
     clips_list = []
     for c in clips:
         cdict = dict(c)
+        cdict['thumbnail_key'] = cdict.get('thumbnail_key') or cdict.get('thumbnailkey') or ''
         raw_words = cdict.get('wordsjson')
         if raw_words:
             try:
@@ -363,12 +385,13 @@ async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]
             start_t = float(clip.get('startTime', 0.0))
             end_t = float(clip.get('endTime', 0.0))
             dur_s = float(clip.get('durationSec', (end_t - start_t) if (end_t > start_t) else 0.0))
+            thumb_key = clip.get('thumbnail_key') or clip.get('thumbnailKey') or ''
             await tx.execute(
-                """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson) 
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)""",
+                """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson, thumbnail_key) 
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)""",
                 clip_id, project_id, clip['title'], clip['hookReason'], 
                 start_t, end_t, dur_s,
-                clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json
+                clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json, thumb_key
             )
         await tx.execute("UPDATE projects SET status = 'READY' WHERE id = $1", project_id)
 
@@ -392,13 +415,25 @@ async def get_clip(clip_id: str) -> Optional[Dict[str, Any]]:
     return cdict
 
 
+async def update_clip_status(clip_id: str, status: str, error_message: str = None):
+    if not _is_valid_uuid(clip_id):
+        return
+    db = await get_backend()
+    await db.execute(
+        "UPDATE clips SET status = $1, errorMessage = $2, updatedAt = CURRENT_TIMESTAMP WHERE id = $3",
+        status, error_message, clip_id
+    )
+
+
 async def update_clip_render_details(
     clip_id: str,
     words_json: str,
     caption_config: str,
     aspect_ratio: str,
     start_time: float = None,
-    end_time: float = None
+    end_time: float = None,
+    status: str = 'COMPLETED',
+    error_message: str = None
 ):
     if not _is_valid_uuid(clip_id):
         return
@@ -407,16 +442,16 @@ async def update_clip_render_details(
         duration_sec = max(0.0, end_time - start_time)
         await db.execute(
             """UPDATE clips 
-               SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, startTime = $4, endTime = $5, durationSec = $6, updatedAt = CURRENT_TIMESTAMP 
-               WHERE id = $7""",
-            words_json, caption_config, aspect_ratio, start_time, end_time, duration_sec, clip_id
+               SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, startTime = $4, endTime = $5, durationSec = $6, status = $7, errorMessage = $8, updatedAt = CURRENT_TIMESTAMP 
+               WHERE id = $9""",
+            words_json, caption_config, aspect_ratio, start_time, end_time, duration_sec, status, error_message, clip_id
         )
     else:
         await db.execute(
             """UPDATE clips 
-               SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, updatedAt = CURRENT_TIMESTAMP 
-               WHERE id = $4""",
-            words_json, caption_config, aspect_ratio, clip_id
+               SET wordsJson = $1, captionConfig = $2, aspectRatio = $3, status = $4, errorMessage = $5, updatedAt = CURRENT_TIMESTAMP 
+               WHERE id = $6""",
+            words_json, caption_config, aspect_ratio, status, error_message, clip_id
         )
 
 

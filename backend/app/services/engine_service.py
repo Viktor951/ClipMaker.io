@@ -80,15 +80,27 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     generated_clips_ui = []
     total_clips = len(clip_boundaries)
     
-    for i, (start_sec, end_sec, title, hook) in enumerate(clip_boundaries):
+    for i, item in enumerate(clip_boundaries):
         clip_num = i + 1
+        if isinstance(item, dict):
+            start_sec = float(item.get("start", 0.0))
+            end_sec = float(item.get("end", 0.0))
+            title = str(item.get("title", f"Clipe {clip_num}"))
+            hook = str(item.get("hook", ""))
+            viral_score = max(0, min(100, int(item.get("viral_score", 85))))
+        else:
+            start_sec, end_sec, title, hook = item[:4]
+            viral_score = max(0, min(100, int(item[4]))) if len(item) > 4 else max(0, min(100, 95 - i * 5))
+
         logger.info(f"[CLIPE {clip_num}/{total_clips}] Processando ({start_sec:.1f}s -> {end_sec:.1f}s)...")
 
         clip_uuid = str(uuid.uuid4())
         clip_filename = f"clip_{clip_uuid}.mp4"
         clean_clip_filename = f"clean_{clip_uuid}.mp4"
+        thumb_filename = f"thumb_{clip_uuid}.jpg"
         output_clean_path = os.path.join(temp_dir, clean_clip_filename)
         output_path = os.path.join(temp_dir, clip_filename)
+        thumb_path = os.path.join(temp_dir, thumb_filename)
         srt_path = os.path.join(temp_dir, f"sub_{uuid.uuid4().hex}.srt")
 
         has_subtitles = False
@@ -124,6 +136,10 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
                 shutil.copy(output_clean_path, output_path)
                 
             logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
+
+            # Geração de thumbnail real do clipe (~1s)
+            logger.info(f"[CLIPE {clip_num}] Gerando miniatura do vídeo com FFmpeg...")
+            video_service.generate_thumbnail(input_path, start_sec + 1.0, thumb_path)
         except Exception as e:
             raise RuntimeError(f"Erro inesperado ao renderizar clipe {clip_num}: {str(e)}")
         finally:
@@ -142,10 +158,11 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
             "startTime": round(start_sec, 2),
             "endTime": round(end_sec, 2),
             "aspectRatio": aspect_ratio,
-            "viralScore": 95 - i * 5,
+            "viralScore": viral_score,
             "hookReason": hook,
             "words": words_ui,
-            "thumbnail": f"https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80",
+            "thumbnail": thumb_filename,
+            "thumbnail_key": thumb_filename,
         })
         
         # GC entre clipes para devolver memória do face tracking e render anterior

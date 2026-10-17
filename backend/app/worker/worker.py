@@ -14,19 +14,30 @@ from backend.app.core.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger("clipmaker.worker")
 
-# Configuração da fila: Redis (produção) ou SQLite (desenvolvimento local / testes)
+# Configuração da fila: Redis (produção) ou SQLite (desenvolvimento local / testes com flag explícita)
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+allow_sqlite = os.getenv("ALLOW_SQLITE_FALLBACK", "false").lower() in ("true", "1") and os.getenv("ENVIRONMENT") != "production"
 _use_redis = True
 
 if redis_url.startswith("sqlite"):
+    if not allow_sqlite:
+        raise RuntimeError("REDIS_URL SQLite detectada, mas ALLOW_SQLITE_FALLBACK não está ativada.")
     _use_redis = False
 else:
     try:
         import redis
-        client = redis.from_url(redis_url, socket_connect_timeout=1.0)
+        client = redis.from_url(redis_url, socket_connect_timeout=2.0)
         client.ping()
     except Exception as e:
-        logger.warning(f"Redis indisponível ({e}). Alternando para SqliteHuey (huey_queue.db) local.")
+        if not allow_sqlite:
+            logger.critical(f"Falha crítica: Redis indisponível ({e}).")
+            raise RuntimeError(
+                f"Redis indisponível ({e}). Em produção ou sem permissão explícita, "
+                f"a fila de tarefas falha imediatamente. Para testes/dev local sem Redis, use ALLOW_SQLITE_FALLBACK=true."
+            ) from e
+        logger.warning(
+            f"[AVISO] Redis indisponível ({e}). ALLOW_SQLITE_FALLBACK=true ativado: alternando para SqliteHuey (huey_queue.db) local."
+        )
         _use_redis = False
 
 if _use_redis:
@@ -35,7 +46,7 @@ if _use_redis:
 else:
     queue_db_path = str(Path(__file__).resolve().parent.parent.parent.parent / "huey_queue.db")
     huey = SqliteHuey('clipmaker_tasks', filename=queue_db_path)
-    logger.info("Fila Huey inicializada com SqliteHuey (local).")
+    logger.warning("[AVISO] Fila Huey inicializada com SqliteHuey local.")
 
 
 def _cleanup_runtime():
@@ -84,7 +95,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
 @huey.task()
 def re_render_clip_task(clip_id: str, payload_dict: dict):
     from backend.app.core.loop import run_sync
-    from backend.app.db.db_service import get_clip, get_project_with_clips, update_clip_render_details
+    from backend.app.db.db_service import get_clip, get_project_with_clips, update_clip_render_details, update_clip_status
     from backend.app.services.video_service import generate_srt_from_words, extract_and_crop_clip, re_render_clip
     import uuid, shutil, json
 
@@ -93,11 +104,16 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
     project = run_sync(get_project_with_clips(clip.get("projectid")))
     if not project: return
 
+    # Atualiza status inicial do re-render
+    run_sync(update_clip_status(clip_id, "RENDERING"))
+
     from backend.app.core.config import settings
     temp_dir = str(settings.TEMP_DIR)
     
     rendered_url = clip.get("renderedurl")
-    if not rendered_url: return
+    if not rendered_url:
+        run_sync(update_clip_status(clip_id, "FAILED", "Arquivo renderizado de origem não encontrado."))
+        return
         
     clip_uuid = rendered_url.replace("clip_", "").replace(".mp4", "")
     clean_clip_filename = f"clean_{clip_uuid}.mp4"
@@ -114,8 +130,12 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
     current_aspect = clip.get("aspectratio", "9:16")
     
     aspect_ratio = payload_dict.get("aspect_ratio", "9:16")
+    if aspect_ratio not in ("9:16", "1:1", "16:9"):
+        aspect_ratio = "9:16"
+
     style = payload_dict.get("style", "Yellow")
-    quality = payload_dict.get("quality", "Medium")
+    raw_quality = str(payload_dict.get("quality", "1080p")).lower()
+    quality = "720p" if raw_quality == "720p" else "1080p"
     add_subtitles = payload_dict.get("add_subtitles", True)
     words = payload_dict.get("words", [])
 
@@ -158,21 +178,24 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
                 shutil.copyfile(output_clean_path, output_path)
         else:
             re_render_clip(output_clean_path, output_path, srt_path, style, add_subtitles, quality, aspect_ratio)
-            
+
+        # Sucesso: atualiza dados e define status COMPLETED
+        run_sync(update_clip_render_details(
+            clip_id=clip_id,
+            words_json=json.dumps(words),
+            caption_config=style,
+            aspect_ratio=aspect_ratio,
+            start_time=new_start,
+            end_time=new_end,
+            status="COMPLETED"
+        ))
+        logger.info(f"Re-render do clipe {clip_id} concluído com sucesso.")
     except Exception as e:
-        logger.error(f"Erro no re-render: {e}")
+        logger.error(f"Erro no re-render do clipe {clip_id}: {e}", exc_info=True)
+        run_sync(update_clip_status(clip_id, "FAILED", str(e)))
+        raise
     finally:
         if os.path.exists(srt_path):
             try: os.remove(srt_path)
             except OSError: pass
-        # Limpeza de RAM após re-render
         _cleanup_runtime()
-                
-    run_sync(update_clip_render_details(
-        clip_id=clip_id,
-        words_json=json.dumps(words),
-        caption_config=style,
-        aspect_ratio=aspect_ratio,
-        start_time=new_start,
-        end_time=new_end
-    ))
