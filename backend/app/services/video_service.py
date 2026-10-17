@@ -39,8 +39,12 @@ def is_nvenc_available() -> bool:
 # Parâmetros de encoding centralizados (incluindo fallback)
 # ============================================================
 
+def _get_optimal_cpu_threads() -> str:
+    cores = os.cpu_count() or 2
+    return str(min(4, max(2, cores // 2)))
+
 def get_encoding_params() -> dict:
-    """Retorna parâmetros de encoding otimizados para baixo consumo de RAM."""
+    """Retorna parâmetros de encoding otimizados para velocidade e uso equilibrado de recursos."""
     if is_nvenc_available():
         return {
             "vcodec": "h264_nvenc",
@@ -51,7 +55,7 @@ def get_encoding_params() -> dict:
             "maxrate": "10M",
             "acodec": "aac",
             "b:a": "128k",
-            "threads": "1",
+            "threads": _get_optimal_cpu_threads(),
         }
     else:
         return {
@@ -60,18 +64,18 @@ def get_encoding_params() -> dict:
             "crf": "23",
             "acodec": "aac",
             "b:a": "128k",
-            "threads": "1",
+            "threads": _get_optimal_cpu_threads(),
         }
 
 def _get_fallback_cpu_params() -> dict:
-    """Parâmetros de fallback em CPU — também limitados a 1 thread."""
+    """Parâmetros de fallback em CPU com multithreading equilibrado."""
     return {
         "vcodec": "libx264",
         "preset": "ultrafast",
         "crf": "23",
         "acodec": "aac",
         "b:a": "128k",
-        "threads": "1",
+        "threads": _get_optimal_cpu_threads(),
     }
 
 def _ffmpeg_base() -> list:
@@ -112,6 +116,11 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
     - Libera cascade classifier ao final
     """
     import tempfile
+
+    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    if not os.path.exists(cascade_path):
+        logger.info("Face tracking: classificador Haar cascade não encontrado. Usando centro padrão (otimização de tempo).")
+        return 960
 
     logger.info(f"Face tracking: extraindo sub-clipe temporário {start_sec:.1f}s -> {end_sec:.1f}s...")
     
@@ -338,7 +347,9 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
     if result.returncode != 0:
         encoding_params = get_encoding_params()
         if encoding_params.get("vcodec") == "h264_nvenc":
-            logger.warning("NVENC falhou, tentando fallback com CPU...")
+            logger.warning("NVENC falhou, desativando NVENC e utilizando CPU com múltiplas threads...")
+            global _NVENC_AVAILABLE
+            _NVENC_AVAILABLE = False
             cpu_params = _get_fallback_cpu_params()
             fallback_cmd = _ffmpeg_base() + [
                 "-ss", str(start_sec),

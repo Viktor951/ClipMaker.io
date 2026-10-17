@@ -78,6 +78,7 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
     return {
         "status": project.get("status"),
         "error": project.get("errormessage"),
+        "title": project.get("title"),
         "clips": clips_list
     }
 

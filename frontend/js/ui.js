@@ -280,14 +280,24 @@ const UI = {
         }
 
         modal.classList.remove('hidden');
+        if (!history.state || history.state.page !== 'editor') {
+            const currentUrl = new URL(window.location.href);
+            history.pushState({ page: 'editor', clipId: clip.id }, '', currentUrl.toString());
+        }
     },
 
     closeEditorModal() {
         const modal = document.getElementById('editor-modal');
-        if (modal) modal.classList.add('hidden');
+        if (modal && !modal.classList.contains('hidden')) {
+            modal.classList.add('hidden');
+        }
         
         const videoEl = document.getElementById('editor-video-player');
         if (videoEl) videoEl.pause();
+
+        if (history.state && history.state.page === 'editor') {
+            history.back();
+        }
     },
 
     highlightActiveWord(index) {

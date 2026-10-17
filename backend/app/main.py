@@ -47,10 +47,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",")],
+    allow_origins=[origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Registrando Roteadores (compatibilidade total: /api/auth, /api/videos, /api/projects e /api/v1)
@@ -71,4 +71,19 @@ app.include_router(project.router, prefix="/api/v1/projects", tags=["project"])
 @app.get("/api/health")
 def health_check():
     return {"status": "ok", "version": settings.VERSION}
+
+# Servindo frontend estático (desenvolvimento e execução integrada)
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+from fastapi import WebSocket
+
+@app.websocket("/{full_path:path}")
+async def dummy_ws(websocket: WebSocket, full_path: str):
+    await websocket.close()
+
+_frontend_dir = Path(__file__).resolve().parent.parent.parent / "frontend"
+if _frontend_dir.exists() and (_frontend_dir / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
+
+
 

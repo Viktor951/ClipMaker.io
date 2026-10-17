@@ -2,6 +2,13 @@
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
 
 # === Vídeos e mídia temporária ===
 *.webm
@@ -9,11 +16,16 @@ __pycache__/
 *.mkv
 *.avi
 *.srt
+*.m4a
+*.wav
+*.mp3
 
-# === Banco de dados ===
+# === Banco de dados e filas locais ===
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
 
 # === Ambiente e Segredos ===
 .env
@@ -21,18 +33,31 @@ __pycache__/
 *.env
 **/.env
 **/.env.*
-node_modules/
+!.env.example
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+# === Logs ===
+logs/
+*.log
+
+# === Temp do backend e uploads ===
+backend/temp_videos/
+backend/temp/
+temp_videos/
+temp/
 
 # === Documentos gerados ===
 *.docx
 
-# === Temp do backend ===
-backend/temp_videos/
-backend/temp/
-*.db-shm
-*.db-wal
-*.mp4
-*.m4a
-# === IDE ===
+# === Dependências e pacotes ===
+node_modules/
+
+# === IDE e OS ===
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db

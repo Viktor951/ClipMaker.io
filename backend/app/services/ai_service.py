@@ -26,10 +26,10 @@ def _detect_device():
             logger.info(f"GPU detectada: {torch.cuda.get_device_name(0)}")
             return "cuda", "float16"
         else:
-            logger.warning("⚠️ Rodando Whisper em CPU — isso pode ser MUITO mais lento.")
+            logger.warning("[AVISO] Rodando Whisper em CPU - isso pode ser mais lento.")
             return "cpu", "int8"
     except ImportError:
-        logger.warning("⚠️ Rodando Whisper em CPU (PyTorch não instalado).")
+        logger.warning("[AVISO] Rodando Whisper em CPU (PyTorch nao instalado).")
         return "cpu", "int8"
 
 def transcribe_audio(input_path: str, language: str = "pt") -> list:
@@ -50,8 +50,9 @@ def transcribe_audio(input_path: str, language: str = "pt") -> list:
         from faster_whisper import WhisperModel
         
         logger.info("Carregando modelo Whisper tiny...")
-        model = WhisperModel("tiny", device=device, compute_type="int8")
-        logger.info("Modelo carregado. Iniciando transcrição...")
+        cpu_threads = min(4, max(2, (os.cpu_count() or 2) // 2))
+        model = WhisperModel("tiny", device=device, compute_type="int8", cpu_threads=cpu_threads)
+        logger.info(f"Modelo carregado ({cpu_threads} cpu threads). Iniciando transcrição...")
         
         segments_gen, info = model.transcribe(
             input_path, 
@@ -149,8 +150,8 @@ TRANSCRIÇÃO DO VÍDEO:
 {transcript_text}
 """
     
-    # Tentar vários modelos em sequência caso um esteja indisponível
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b"]
+    # Modelos disponíveis e verificados com a chave PRO
+    models_to_try = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"]
     
     for model_name in models_to_try:
         for attempt in range(3):

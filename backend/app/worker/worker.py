@@ -1,8 +1,10 @@
-from huey import RedisHuey
+from huey import RedisHuey, SqliteHuey
 import os
+import sys
 import gc
 import logging
 import traceback
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,9 +14,28 @@ from backend.app.core.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger("clipmaker.worker")
 
-# Configura a fila usando Redis
+# Configuração da fila: Redis (produção) ou SQLite (desenvolvimento local / testes)
 redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-huey = RedisHuey('clipmaker_tasks', url=redis_url)
+_use_redis = True
+
+if redis_url.startswith("sqlite"):
+    _use_redis = False
+else:
+    try:
+        import redis
+        client = redis.from_url(redis_url, socket_connect_timeout=1.0)
+        client.ping()
+    except Exception as e:
+        logger.warning(f"Redis indisponível ({e}). Alternando para SqliteHuey (huey_queue.db) local.")
+        _use_redis = False
+
+if _use_redis:
+    huey = RedisHuey('clipmaker_tasks', url=redis_url)
+    logger.info("Fila Huey inicializada com Redis com sucesso.")
+else:
+    queue_db_path = str(Path(__file__).resolve().parent.parent.parent.parent / "huey_queue.db")
+    huey = SqliteHuey('clipmaker_tasks', filename=queue_db_path)
+    logger.info("Fila Huey inicializada com SqliteHuey (local).")
 
 
 def _cleanup_runtime():
