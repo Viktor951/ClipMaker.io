@@ -12,6 +12,7 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
     logger.addHandler(handler)
 
+from backend.app.core.timing import timed
 from backend.app.services import ai_service, video_service
 
 def format_duration(seconds: float) -> str:
@@ -25,7 +26,7 @@ def _update_status(project_id: str, status: str):
     from backend.app.db.db_service import update_project_status
     run_sync(update_project_status(project_id, status))
 
-def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None, aspect_ratio: str = "9:16") -> list:
+def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str = None, aspect_ratio: str = "9:16", skip_llm: bool = False) -> list:
     """
     Pipeline completo otimizado para baixo consumo de RAM:
     1. Probe do vídeo
@@ -49,7 +50,8 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
 
     # 1. Probe
     logger.info("Etapa 1/4: Analisando vídeo (ffprobe)...")
-    orig_w, orig_h, duration = video_service.get_video_info(input_path)
+    with timed("probe"):
+        orig_w, orig_h, duration = video_service.get_video_info(input_path)
     logger.info(f"Vídeo: {orig_w}x{orig_h}, duração: {duration:.1f}s")
 
     # 2. Transcrição
@@ -57,7 +59,8 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     if project_id:
         _update_status(project_id, "TRANSCRIBING")
         
-    segments = ai_service.transcribe_audio(input_path)
+    with timed("transcription"):
+        segments = ai_service.transcribe_audio(input_path)
     logger.info(f"Transcrição finalizada: {len(segments)} segmentos obtidos.")
 
     # 3. Geração de boundaries via LLM
@@ -65,12 +68,15 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
     if project_id:
         _update_status(project_id, "ANALYZING")
         
-    transcript_text = ai_service.format_transcript_from_segments(segments)
-    clip_boundaries = ai_service.get_viral_clips_from_llm(transcript_text, duration)
-    
-    # Liberar o texto da transcrição — pode ser grande para vídeos longos
-    del transcript_text
-    gc.collect()
+    with timed("llm"):
+        if skip_llm:
+            logger.info("skip_llm=True: usando fallback matemático de cortes (_fallback_clip_boundaries).")
+            clip_boundaries = ai_service._fallback_clip_boundaries(duration)
+        else:
+            transcript_text = ai_service.format_transcript_from_segments(segments)
+            clip_boundaries = ai_service.get_viral_clips_from_llm(transcript_text, duration)
+            del transcript_text
+            gc.collect()
 
     # 4. Renderização
     logger.info(f"Etapa 4/4: Renderizando {len(clip_boundaries)} clipe(s)...")
@@ -112,28 +118,31 @@ def process_video_full_pipeline(input_path: str, temp_dir: str, project_id: str 
                 has_subtitles = True
             
         logger.info(f"[CLIPE {clip_num}] Tracking facial (OpenCV)...")
-        face_center_x = video_service.calculate_smooth_face_center(input_path, start_sec, end_sec)
+        with timed("face_tracking"):
+            face_center_x = video_service.calculate_smooth_face_center(input_path, start_sec, end_sec)
 
         logger.info(f"[CLIPE {clip_num}] Renderizando vídeo limpo com FFmpeg...")
         try:
-            render_time = video_service.render_clip(
-                input_path=input_path,
-                output_path=output_clean_path,
-                srt_path=None,
-                start_sec=start_sec,
-                end_sec=end_sec,
-                orig_w=orig_w,
-                orig_h=orig_h,
-                face_center_x=face_center_x,
-                has_subtitles=False,
-                aspect_ratio=aspect_ratio
-            )
+            with timed("render"):
+                render_time = video_service.render_clip(
+                    input_path=input_path,
+                    output_path=output_clean_path,
+                    srt_path=None,
+                    start_sec=start_sec,
+                    end_sec=end_sec,
+                    orig_w=orig_w,
+                    orig_h=orig_h,
+                    face_center_x=face_center_x,
+                    has_subtitles=False,
+                    aspect_ratio=aspect_ratio
+                )
             
-            if has_subtitles:
-                logger.info(f"[CLIPE {clip_num}] Aplicando subtitles no vídeo limpo...")
-                video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow", aspect_ratio=aspect_ratio)
-            else:
-                shutil.copy(output_clean_path, output_path)
+            with timed("subtitles"):
+                if has_subtitles:
+                    logger.info(f"[CLIPE {clip_num}] Aplicando subtitles no vídeo limpo...")
+                    video_service.re_render_clip(output_clean_path, output_path, srt_path, "Yellow", aspect_ratio=aspect_ratio)
+                else:
+                    shutil.copy(output_clean_path, output_path)
                 
             logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
 

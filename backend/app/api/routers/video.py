@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from backend.app.api.deps import limiter, get_current_user
 from backend.app.core.config import settings
+from backend.app.core.timing import timed
 from backend.app.db.db_service import create_project, get_clip, get_project_with_clips
 from backend.app.services.video_service import get_video_info
 from backend.app.worker.worker import process_video_task
@@ -171,7 +172,8 @@ async def process_url(
             "--", clean_url
         ]
 
-        result = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
+        with timed("yt_dlp"):
+            result = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
         if result.returncode != 0:
             logger.warning(f"yt-dlp falhou: {result.stderr}")
             raise HTTPException(status_code=400, detail="Erro ao baixar o vídeo do link informado.")
