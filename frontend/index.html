@@ -28,15 +28,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons: Subset vetorial leve local (~3KB, substitui Font Awesome de ~500KB) -->
-    <link rel="stylesheet" href="css/icons.css?v=9a509dc5">
+    <link rel="stylesheet" href="css/icons.css?v=89f2dc44">
     
     <!-- Stylesheets -->
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
-    <link rel="stylesheet" href="css/layout.css?v=9e0d8a1a">
-    <link rel="stylesheet" href="css/components.css?v=fc865e87">
-    <link rel="stylesheet" href="css/responsive.css?v=8cd6d797">
+    <link rel="stylesheet" href="css/layout.css?v=a075cd59">
+    <link rel="stylesheet" href="css/components.css?v=5d0c6fc6">
+    <link rel="stylesheet" href="css/responsive.css?v=0f37a6d7">
 </head>
 <body>
 
@@ -370,10 +370,12 @@
         </section>
 
         <!-- ═══════════ PROCESSING ═══════════ -->
-        <section class="processing hidden" id="processing-section">
+        <section class="processing hidden" id="processing-section" aria-labelledby="processing-heading">
             <div class="processing-content">
+                <span class="processing-badge"><i class="fa-solid fa-bolt" aria-hidden="true"></i> Pipeline Ativo</span>
+
                 <!-- Wave Visualizer -->
-                <div class="wave-visualizer">
+                <div class="wave-visualizer" aria-hidden="true">
                     <div class="wave-bar"></div>
                     <div class="wave-bar"></div>
                     <div class="wave-bar"></div>
@@ -388,11 +390,11 @@
                     <div class="wave-bar"></div>
                 </div>
 
-                <h2 class="processing-title">Analisando o vídeo...</h2>
-                <div class="processing-status" id="processing-percentage">0%</div>
+                <h2 class="processing-title" id="processing-heading">Analisando o vídeo...</h2>
+                <div class="processing-status" id="processing-percentage" role="status" aria-live="polite">0%</div>
 
                 <!-- Progress Bar -->
-                <div class="progress-track">
+                <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
 
@@ -559,6 +561,9 @@
                 </div>
             </div>
         </div>
+
+        <!-- ═══════════ TOAST CONTAINER ═══════════ -->
+        <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     </main>
 

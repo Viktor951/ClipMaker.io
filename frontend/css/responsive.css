@@ -258,10 +258,46 @@
     text-align: center;
     gap: 0.75rem;
   }
+
+  .processing-content {
+    padding: 2rem 1.25rem;
+  }
+
+  .modal {
+    padding: 0.75rem;
+  }
+
+  .modal-content {
+    max-height: 94vh;
+  }
+
+  .modal-header {
+    padding: 0.85rem 1.25rem;
+  }
+
+  .modal-body {
+    padding: 1.25rem;
+  }
+
+  #toast-container {
+    top: 1rem;
+    right: 1rem;
+    width: calc(100vw - 2rem);
+  }
 }
 
 @media (max-width: 480px) {
   .hero-title {
     font-size: 1.35rem;
   }
+
+  .editor-field-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .clip-card-actions {
+    flex-direction: column;
+  }
 }
+
