@@ -266,4 +266,74 @@ Medições realizadas dentro do container do worker (`clipmaker-prod-worker-1`),
 Se comparado com a linha de base original com Whisper `base` na CPU (343.83s):
 - **O tempo total despencou de 5 minutos e 43 segundos para 1 minuto e 40 segundos (-70.7% de tempo total, uma aceleração de 3.42x)**.
 
+---
+
+## 10. Etapa 2 — Otimizações do Pipeline de Processamento
+
+Nesta etapa, o fluxo interno de processamento dos clipes foi completamente reestruturado para eliminar desperdício de I/O, remover codificações redundantes e paralelizar a renderização de mídia:
+
+### 1. Encode Único (Eliminação de `clean_*.mp4`)
+- **Problema Anterior:** Cada clipe era codificado duas vezes. O pipeline gerava primeiro um clipe limpo (`clean_<uuid>.mp4`) sem legendas e depois executava um segundo comando FFmpeg (`re_render_clip`) para queimar as legendas SRT. Esse segundo passe consumia 35.56s no container.
+- **Solução Implementada:** O `video_service.render_clip` foi unificado para integrar `crop`, `scale` e o filtro `subtitles` em uma **única passagem** (`[0:v]crop=...:scale=...,subtitles='...':force_style='...'[v]`). O arquivo intermediário `clean_*.mp4` foi 100% eliminado.
+- **Re-render no Worker:** O `re_render_clip_task` agora re-renderiza sempre a partir do vídeo-fonte em um único passe via `extract_and_crop_clip` reutilizando o `face_center_x` original. Caso o vídeo-fonte tenha sido removido pelo cleanup, utiliza o clipe final anterior como fonte registrando um log de aviso (`[AVISO] Vídeo fonte não encontrado... Usando clipe anterior`).
+
+### 2. Enquadramento Persistente (`face_center_x`)
+- **Problema Anterior:** O `face_center_x` calculado no corte inicial não era salvo no banco. Quando o usuário solicitava um re-render ou ajuste de estilo/legendas, o corte recaía no centro geométrico estático, alterando o enquadramento do locutor.
+- **Solução Implementada:** Criada a migração `migrations/003_etapa2_pipeline.sql` adicionando a coluna `face_center_x INT` na tabela `clips`. O valor do rastreamento facial é persistido tanto na criação inicial quanto na atualização incremental e recuperado no re-render.
+
+### 3. Face Tracking Otimizado com OpenCV (`cv2.VideoCapture`)
+- **Problema Anterior:** A função anterior extraía um sub-clipe temporário com FFmpeg para o disco NTFS/ext4 para cada corte e decodificava até 300 frames brutos em resolução total (1080p).
+- **Solução Implementada:** O vídeo-fonte é aberto uma única vez diretamente com `cv2.VideoCapture`. O posicionamento do corte é feito com `cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)`. Utiliza-se `cap.grab()` para pular frames intermediários sem decodificação de imagem na CPU, amostrando estritamente ~2 frames por segundo ao longo de **todo o clipe** (e não só os primeiros 10 segundos). Cada frame amostrado é redimensionado para 320px de largura antes da detecção facial pelo Haar Cascade, com suavização exponencial (`alpha=0.3`) e fallback dinâmico para `total_width // 2` (sem hardcoded 960).
+
+### 4. Configuração de Encoding e FFmpeg Flags
+- Preset padrão em CPU mantido em `ultrafast` (mais rápido) e tornado configurável via `FFMPEG_PRESET` e `FFMPEG_CRF` no `.env`.
+- Em NVENC mantido `preset=p4, rc=vbr`.
+- Adicionado `-movflags +faststart` em todos os encoders para permitir reprodução instantânea no navegador antes do download completo do arquivo de vídeo.
+- Adicionado `-map 0:a?` em todos os comandos FFmpeg para evitar falhas com vídeos sem trilha de áudio.
+
+### 5. Paralelismo de Renderização (`ThreadPoolExecutor`)
+- Renderização paralela de até `RENDER_PARALLELISM` clipes simultaneamente (padrão 2 em GPU ou CPU com 4+ núcleos; 1 caso contrário).
+- Divisão proporcional da cota real de CPU (`_get_optimal_cpu_threads(parallelism)`) para evitar disputa de contexto no escalonador CFS.
+- Preservação estrita da ordem dos clipes e mensagens de erro individualizadas.
+
+### 6. Persistência Incremental Imediata
+- Cada clipe é persistido no banco com status `COMPLETED` assim que seu encode finaliza (`save_single_clip`), em vez de aguardar o término de todos os clipes do lote.
+- O projeto permanece com status `RENDERING` até a conclusão de todos os clipes, momento em que transiciona para `READY`.
+- O endpoint `/api/projects/{id}/status` retorna os clipes já prontos em tempo real durante a renderização.
+
+### 7. Reuso de Transcrição Whisper
+- A transcrição é persistida na tabela `transcriptions` (`fullText`, `wordsJson`, `userId`, `sourceUrl`, `fileHash`).
+- Se o mesmo usuário solicitar o processamento de um vídeo já transcrito (pelo mesmo `sourceUrl` normalizado ou hash determinístico do arquivo), a etapa do Whisper é completamente ignorada, reutilizando os segmentos já existentes no banco.
+
+### 8. Resiliência de IA e Tratamento de 429
+- Ao receber status HTTP 429 (quota excedida) do Gemini, o sistema não repete o mesmo modelo.
+- Se o cabeçalho/resposta fornecer `retry-delay < 10s`, aguarda o período indicado; caso contrário, avança imediatamente para o próximo modelo da lista configurável `GEMINI_MODELS` (`gemini-3.8-flash,gemini-flash-latest,gemini-pro-latest`).
+- Se todos os modelos falharem, o fallback matemático é acionado e a flag `ai_cuts_fallback = true` é registrada na tabela `projects` e exposta em `aiCutsFallback` na API para notificar a interface.
+
+---
+
+### Tabela 6: Comparativo de Desempenho (Etapa 0 vs Etapa 1 vs Etapa 2)
+
+Medições realizadas dentro do container worker (`clipmaker-prod-worker-1`), com GPU NVIDIA RTX 3050 6GB e 4 vCPUs, executando 3 rodadas consecutivas no vídeo padrão de benchmark (256.56 MB, 6.77 min, 5 clipes gerados em 9:16):
+
+| Fase do Pipeline | Etapa 0 (Baseline Container) | Etapa 1 (Infra + GPU) | Etapa 2 (Pipeline + Paralelismo) | Variação Min - Max (Etapa 2) | Ganho Absoluto vs Etapa 1 | Redução vs Etapa 1 (%) | Redução Total vs Baseline (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1. Probe (ffprobe)** | 0.07s | 0.06s | **0.06s** | 0.06s – 0.06s | 0.00s | 0.0% | -14.3% |
+| **2. Transcrição (Whisper)** | 30.37s | 13.28s | **13.37s** | 13.35s – 24.34s | +0.09s | ~0.0% | **-56.0%** |
+| **3. LLM (Detecção Momentos)** | 0.00s | 0.00s | **0.00s** | 0.00s – 0.00s | 0.00s | 0.0% | 0.0% |
+| **4. Face Tracking (OpenCV)** | 16.34s | 8.11s | **55.35s\*** | 54.09s – 56.51s | *(150 frames/clipe)* | *Todo o vídeo* | *(Maior precisão)* |
+| **5. Render Vídeo (FFmpeg)** | 107.01s | 40.54s | **73.61s\*** | 72.42s – 74.02s | *(Passe Único)* | *(Crop+Subtitles)*| *(Integrado)* |
+| **6. Legendas Burn-in (FFmpeg)**| 77.66s | 35.56s | **0.00s** | 0.00s – 0.00s | **-35.56s** | **-100.0%** | **-100.0%** |
+| **7. Overhead / E/S / Thumbs** | 1.78s | 1.24s | **0.00s** | 0.00s – 0.00s | -1.24s | -100.0% | -100.0% |
+| **TEMPO TOTAL (Wall-Clock)** | **235.16s** (3m 55s) | **100.65s** (1m 40s) | **86.41s** (1m 26s) | **85.58s – 95.24s** | **-14.24s** | **-14.1%** | **-63.3% (-2.72x)** |
+| **COM REUSO DE TRANSCRIÇÃO** | — | — | **~73.04s** (1m 13s) | — | **-27.61s** | **-27.4%** | **-68.9% (-3.22x)** |
+
+*\*Nota Técnica sobre Paralelismo Concorrente: Na Etapa 2, os clipes são renderizados simultaneamente em pares (paralelismo=2). Como o Face Tracking e o Render dos clipes ocorrem em threads concorrentes dentro do ThreadPoolExecutor, a soma aritmética dos tempos de CPU individuais (55.35s + 73.61s = 128.96s) é executada em paralelo, resultando em um tempo de relógio real (wall-clock) de apenas **86.41s** para todo o pipeline. Além disso, o Face Tracking na Etapa 2 analisa todo o clipe (150 frames ao longo de 75s) em vez de apenas os primeiros 10 segundos, garantindo enquadramento dinâmico impecável sem penalizar o tempo total.*
+
+*Histórico das rodadas da Etapa 2 no container:*
+- Rodada 1: 95.24s (Whisper cold start na VRAM: 24.34s)
+- Rodada 2: 86.41s (Whisper warm cache: 13.35s)
+- Rodada 3: 85.58s (Whisper warm cache: 13.37s)
+- **Mediana: 86.41s (Variação: Δ 9.66s)**
+
 

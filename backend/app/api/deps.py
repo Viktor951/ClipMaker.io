@@ -9,8 +9,8 @@ from backend.app.db.db_service import get_user_by_email
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
-# Criação do limiter global
-limiter = Limiter(key_func=get_remote_address)
+import os
+limiter = Limiter(key_func=get_remote_address, enabled=os.getenv("ENVIRONMENT") != "test")
 
 async def get_current_user(
     header_token: Optional[str] = Depends(oauth2_scheme),

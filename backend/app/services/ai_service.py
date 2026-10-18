@@ -3,6 +3,7 @@ import gc
 import logging
 import os
 import json
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -52,6 +53,23 @@ def _get_target_model_name(device: str) -> str:
         return configured
     return "small" if device == "cuda" else "base"
 
+def get_cgroup_cpu_limit() -> float:
+    """Retorna a cota real de CPU do cgroup v2 (/sys/fs/cgroup/cpu.max) ou os.cpu_count()."""
+    try:
+        cpu_max_path = "/sys/fs/cgroup/cpu.max"
+        if os.path.exists(cpu_max_path):
+            with open(cpu_max_path, "r") as f:
+                parts = f.read().strip().split()
+                if len(parts) >= 2 and parts[0] != "max":
+                    quota = float(parts[0])
+                    period = float(parts[1])
+                    if period > 0:
+                        return max(1.0, quota / period)
+    except Exception:
+        pass
+    return float(os.cpu_count() or 2)
+
+
 def get_whisper_model():
     """Retorna o modelo Whisper mantido em cache global, respeitando o timeout de ociosidade."""
     global _WHISPER_CACHE
@@ -78,7 +96,7 @@ def get_whisper_model():
     # Se não está em cache, carregar
     if _WHISPER_CACHE["model"] is None:
         from faster_whisper import WhisperModel
-        cpu_threads = min(4, max(2, (os.cpu_count() or 2) // 2))
+        cpu_threads = min(4, max(1, int(get_cgroup_cpu_limit())))
         logger.info(
             f"Carregando modelo Whisper '{target_model_name}' "
             f"(device={device}, compute_type={compute_type}, threads={cpu_threads if device == 'cpu' else 'GPU'})..."
@@ -228,8 +246,9 @@ TRANSCRIÇÃO DO VÍDEO:
 {transcript_text}
 """
     
-    # Modelos disponíveis e verificados com a chave PRO
-    models_to_try = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"]
+    # Modelos configuráveis via variável de ambiente GEMINI_MODELS
+    raw_models = os.getenv("GEMINI_MODELS", "gemini-3.8-flash,gemini-flash-latest,gemini-pro-latest")
+    models_to_try = [m.strip() for m in raw_models.split(",") if m.strip()]
     total_attempts = 0
     had_429 = False
     
@@ -275,7 +294,8 @@ TRANSCRIÇÃO DO VÍDEO:
                     "model": model_name,
                     "attempts": total_attempts,
                     "had_429": had_429,
-                    "source": "gemini"
+                    "source": "gemini",
+                    "ai_cuts_fallback": False
                 }
                 logger.info(
                     f"LLM RESULTADO: modelo={model_name}, tentativas={total_attempts}, "
@@ -287,7 +307,17 @@ TRANSCRIÇÃO DO VÍDEO:
                 err_str = str(e)
                 if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
                     had_429 = True
-                    logger.warning(f"LLM 429 Quota Exceeded com {model_name} (tentativa {attempt+1}/3)")
+                    logger.warning(f"LLM 429 Quota Exceeded com modelo '{model_name}'.")
+                    # Analisar retry-delay fornecido na resposta da API
+                    delay_match = re.search(r"retry.*?(\d+(?:\.\d+)?)\s*s", err_str, re.IGNORECASE)
+                    retry_delay = float(delay_match.group(1)) if delay_match else 0.0
+                    if 0.0 < retry_delay < 10.0:
+                        logger.info(f"Retry-delay viável detectado ({retry_delay:.1f}s < 10s). Aguardando {retry_delay:.1f}s...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.warning(f"Sem retry-delay menor que 10s para {model_name}. NÃO tentando novamente este modelo. Avançando para o próximo...")
+                        break
                 else:
                     logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
                 
@@ -307,11 +337,12 @@ TRANSCRIÇÃO DO VÍDEO:
         "model": "nenhum (todos falharam)",
         "attempts": total_attempts,
         "had_429": had_429,
-        "source": "fallback_matematico"
+        "source": "fallback_matematico",
+        "ai_cuts_fallback": True
     }
     logger.error(
         f"LLM RESULTADO: modelo=nenhum, tentativas={total_attempts}, "
-        f"429={had_429}, fonte=fallback_matematico (acionado após esgotar retentativas)"
+        f"429={had_429}, fonte=fallback_matematico (acionado após esgotar modelos)"
     )
     return _fallback_clip_boundaries(duration)
 

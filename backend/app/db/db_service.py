@@ -122,10 +122,7 @@ class SqliteBackend:
             await self._conn.execute("PRAGMA journal_mode=WAL;")
             await self._conn.execute("PRAGMA busy_timeout=10000;")
             await self._conn.execute("PRAGMA foreign_keys=ON;")
-            async with self._conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'") as cur:
-                has_users = await cur.fetchone()
-            if not has_users:
-                await self._init_schema()
+            await self._init_schema()
 
     async def _init_schema(self):
         await self._conn.executescript("""
@@ -187,6 +184,26 @@ class SqliteBackend:
             pass
         try:
             await self._conn.execute("ALTER TABLE clips ADD COLUMN thumbnail_key TEXT;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE clips ADD COLUMN face_center_x INTEGER;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE projects ADD COLUMN ai_cuts_fallback INTEGER DEFAULT 0;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE transcriptions ADD COLUMN userId TEXT;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE transcriptions ADD COLUMN sourceUrl TEXT;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("ALTER TABLE transcriptions ADD COLUMN fileHash TEXT;")
         except Exception:
             pass
         await self._conn.commit()
@@ -354,11 +371,13 @@ async def get_project_with_clips(project_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     project = dict(project_row)
+    project['ai_cuts_fallback'] = bool(project.get('ai_cuts_fallback') or project.get('aicutsfallback') or False)
     clips = await db.fetch("SELECT * FROM clips WHERE projectId = $1", project_id)
     clips_list = []
     for c in clips:
         cdict = dict(c)
         cdict['thumbnail_key'] = cdict.get('thumbnail_key') or cdict.get('thumbnailkey') or ''
+        cdict['face_center_x'] = cdict.get('face_center_x') if cdict.get('face_center_x') is not None else cdict.get('facecenterx')
         raw_words = cdict.get('wordsjson')
         if raw_words:
             try:
@@ -371,6 +390,109 @@ async def get_project_with_clips(project_id: str) -> Optional[Dict[str, Any]]:
 
     project['clips'] = clips_list
     return project
+
+
+async def save_single_clip(project_id: str, clip: Dict[str, Any]):
+    """Salva um clipe incrementalmente assim que fica pronto no pipeline."""
+    if not _is_valid_uuid(project_id):
+        return
+    db = await get_backend()
+    raw_clip_id = clip.get('id')
+    clip_id = str(raw_clip_id) if (raw_clip_id and _is_valid_uuid(raw_clip_id)) else str(uuid.uuid4())
+    words_json = json.dumps(clip.get('words', []))
+    start_t = float(clip.get('startTime', 0.0))
+    end_t = float(clip.get('endTime', 0.0))
+    dur_s = float(clip.get('durationSec', (end_t - start_t) if (end_t > start_t) else 0.0))
+    thumb_key = clip.get('thumbnail_key') or clip.get('thumbnailKey') or ''
+    face_cx = clip.get('face_center_x')
+    if face_cx is not None:
+        try:
+            face_cx = int(face_cx)
+        except (ValueError, TypeError):
+            face_cx = None
+
+    await db.execute(
+        """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson, thumbnail_key, face_center_x) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (id) DO UPDATE SET
+               renderedUrl = EXCLUDED.renderedUrl,
+               thumbnail_key = EXCLUDED.thumbnail_key,
+               face_center_x = EXCLUDED.face_center_x,
+               status = 'COMPLETED',
+               updatedAt = CURRENT_TIMESTAMP""",
+        clip_id, project_id, clip.get('title', 'Clipe'), clip.get('hookReason', ''), 
+        start_t, end_t, dur_s,
+        clip.get('viralScore', 85), clip.get('aspectRatio', '9:16'), clip.get('renderedUrl', ''), 'COMPLETED', 'Yellow', words_json, thumb_key, face_cx
+    )
+
+
+async def set_project_ai_fallback(project_id: str, is_fallback: bool):
+    """Registra no projeto se os cortes foram feitos via fallback matemático."""
+    if not _is_valid_uuid(project_id):
+        return
+    db = await get_backend()
+    await db.execute("UPDATE projects SET ai_cuts_fallback = $1 WHERE id = $2", is_fallback, project_id)
+
+
+async def get_cached_transcription(user_id: Optional[str], source_url: Optional[str] = None, file_hash: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Busca transcrição já realizada para o mesmo vídeo do mesmo usuário."""
+    if not user_id or not _is_valid_uuid(user_id):
+        return None
+    if not source_url and not file_hash:
+        return None
+    db = await get_backend()
+    row = None
+    if source_url and file_hash:
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE userId = $1 AND (sourceUrl = $2 OR fileHash = $3) ORDER BY createdAt DESC LIMIT 1",
+            user_id, source_url, file_hash
+        )
+    elif source_url:
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE userId = $1 AND sourceUrl = $2 ORDER BY createdAt DESC LIMIT 1",
+            user_id, source_url
+        )
+    elif file_hash:
+        row = await db.fetchrow(
+            "SELECT * FROM transcriptions WHERE userId = $1 AND fileHash = $2 ORDER BY createdAt DESC LIMIT 1",
+            user_id, file_hash
+        )
+
+    if row:
+        raw_words = row.get("wordsjson")
+        segments = []
+        if raw_words:
+            try:
+                segments = json.loads(raw_words) if isinstance(raw_words, str) else raw_words
+            except Exception:
+                segments = []
+        return {
+            "id": row.get("id"),
+            "full_text": row.get("fulltext"),
+            "language": row.get("language", "pt"),
+            "segments": segments
+        }
+    return None
+
+
+async def save_transcription(project_id: str, user_id: Optional[str], full_text: str, segments: list, language: str = "pt", source_url: Optional[str] = None, file_hash: Optional[str] = None):
+    """Persiste a transcrição na tabela transcriptions para futuro reuso."""
+    if not _is_valid_uuid(project_id):
+        return
+    db = await get_backend()
+    words_json = json.dumps(segments)
+    tid = str(uuid.uuid4())
+    uid = str(user_id) if (user_id and _is_valid_uuid(user_id)) else None
+    await db.execute(
+        """INSERT INTO transcriptions (id, projectId, userId, fullText, language, wordsJson, sourceUrl, fileHash)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (projectId) DO UPDATE SET
+               fullText = EXCLUDED.fullText,
+               wordsJson = EXCLUDED.wordsJson,
+               sourceUrl = EXCLUDED.sourceUrl,
+               fileHash = EXCLUDED.fileHash""",
+        tid, project_id, uid, full_text, language, words_json, source_url, file_hash
+    )
 
 
 async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]):
@@ -386,12 +508,24 @@ async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]
             end_t = float(clip.get('endTime', 0.0))
             dur_s = float(clip.get('durationSec', (end_t - start_t) if (end_t > start_t) else 0.0))
             thumb_key = clip.get('thumbnail_key') or clip.get('thumbnailKey') or ''
+            face_cx = clip.get('face_center_x')
+            if face_cx is not None:
+                try:
+                    face_cx = int(face_cx)
+                except (ValueError, TypeError):
+                    face_cx = None
             await tx.execute(
-                """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson, thumbnail_key) 
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)""",
+                """INSERT INTO clips (id, projectId, title, hookReason, startTime, endTime, durationSec, viralScore, aspectRatio, renderedUrl, status, captionConfig, wordsJson, thumbnail_key, face_center_x) 
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                   ON CONFLICT (id) DO UPDATE SET
+                       renderedUrl = EXCLUDED.renderedUrl,
+                       thumbnail_key = EXCLUDED.thumbnail_key,
+                       face_center_x = EXCLUDED.face_center_x,
+                       status = 'COMPLETED',
+                       updatedAt = CURRENT_TIMESTAMP""",
                 clip_id, project_id, clip['title'], clip['hookReason'], 
                 start_t, end_t, dur_s,
-                clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json, thumb_key
+                clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json, thumb_key, face_cx
             )
         await tx.execute("UPDATE projects SET status = 'READY' WHERE id = $1", project_id)
 
@@ -404,6 +538,7 @@ async def get_clip(clip_id: str) -> Optional[Dict[str, Any]]:
     if not clip:
         return None
     cdict = dict(clip)
+    cdict['face_center_x'] = cdict.get('face_center_x') if cdict.get('face_center_x') is not None else cdict.get('facecenterx')
     raw_words = cdict.get('wordsjson')
     if raw_words:
         try:

@@ -39,43 +39,70 @@ def is_nvenc_available() -> bool:
 # Parâmetros de encoding centralizados (incluindo fallback)
 # ============================================================
 
-def _get_optimal_cpu_threads() -> str:
-    cores = os.cpu_count() or 2
-    return str(min(4, max(2, cores // 2)))
+def get_cgroup_cpu_limit() -> float:
+    """Retorna a cota real de CPU do cgroup v2 (/sys/fs/cgroup/cpu.max) ou os.cpu_count()."""
+    try:
+        cpu_max_path = "/sys/fs/cgroup/cpu.max"
+        if os.path.exists(cpu_max_path):
+            with open(cpu_max_path, "r") as f:
+                parts = f.read().strip().split()
+                if len(parts) >= 2 and parts[0] != "max":
+                    quota = float(parts[0])
+                    period = float(parts[1])
+                    if period > 0:
+                        return max(1.0, quota / period)
+    except Exception:
+        pass
+    return float(os.cpu_count() or 2)
 
-def get_encoding_params() -> dict:
+def _get_optimal_cpu_threads(parallelism: int = 1) -> str:
+    """Calcula threads por processo FFmpeg dividindo a cota real de CPU pela concorrência."""
+    cpu_limit = int(get_cgroup_cpu_limit())
+    threads = max(1, cpu_limit // max(1, parallelism))
+    return str(min(4, threads))
+
+def get_encoding_params(parallelism: int = 1) -> dict:
     """Retorna parâmetros de encoding otimizados para velocidade e uso equilibrado de recursos."""
+    crf = os.getenv("FFMPEG_CRF", "23")
     if is_nvenc_available():
+        preset = os.getenv("FFMPEG_PRESET", "p4")
         return {
             "vcodec": "h264_nvenc",
-            "preset": "p4",
+            "preset": preset,
             "rc": "vbr",
-            "cq": "23",
+            "cq": crf,
             "b:v": "6M",
             "maxrate": "10M",
             "acodec": "aac",
             "b:a": "128k",
-            "threads": _get_optimal_cpu_threads(),
+            "threads": _get_optimal_cpu_threads(parallelism),
+            "movflags": "+faststart",
         }
     else:
+        # Padrão ultrafast em CPU (não trocar para veryfast)
+        preset = os.getenv("FFMPEG_PRESET", "ultrafast")
         return {
             "vcodec": "libx264",
-            "preset": "ultrafast",
-            "crf": "23",
+            "preset": preset,
+            "crf": crf,
             "acodec": "aac",
             "b:a": "128k",
-            "threads": _get_optimal_cpu_threads(),
+            "threads": _get_optimal_cpu_threads(parallelism),
+            "movflags": "+faststart",
         }
 
-def _get_fallback_cpu_params() -> dict:
+def _get_fallback_cpu_params(parallelism: int = 1) -> dict:
     """Parâmetros de fallback em CPU com multithreading equilibrado."""
+    preset = os.getenv("FFMPEG_PRESET", "ultrafast")
+    crf = os.getenv("FFMPEG_CRF", "23")
     return {
         "vcodec": "libx264",
-        "preset": "ultrafast",
-        "crf": "23",
+        "preset": preset,
+        "crf": crf,
         "acodec": "aac",
         "b:a": "128k",
-        "threads": _get_optimal_cpu_threads(),
+        "threads": _get_optimal_cpu_threads(parallelism),
+        "movflags": "+faststart",
     }
 
 def _ffmpeg_base() -> list:
@@ -118,121 +145,101 @@ def _find_face_cascade_path() -> str:
             return p
     return ""
 
-def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: float, alpha: float = 0.15, max_frames: int = 300) -> int:
+def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: float, alpha: float = 0.15) -> int:
     """
-    Detecta o centro do rosto predominante no trecho de vídeo.
-    Otimizações de memória:
-    - Redimensiona frames para 480px de largura antes de processar (economia ~75% RAM por frame)
-    - Deleta explicitamente todas as matrizes NumPy após uso
-    - Roda gc.collect() periodicamente
-    - Libera cascade classifier ao final
+    Detecta o centro do rosto predominante no trecho de vídeo de forma leve:
+    - Abre o vídeo fonte diretamente com cv2.VideoCapture (sem sub-clipe temporário e sem ffmpeg)
+    - Posiciona no início com CAP_PROP_POS_MSEC
+    - Amostra ~2 frames por segundo ao longo de TODO o trecho usando grab() para pular frames sem decodificar
+    - Reduz cada frame amostrado para ~320px de largura antes da detecção Haar
+    - Suaviza o resultado com média móvel exponencial
+    - Fallback dinâmico para a metade da largura real do vídeo (total_width // 2)
     """
-    import tempfile
-
     cascade_path = _find_face_cascade_path()
-    if not cascade_path:
-        logger.info("Face tracking: classificador Haar cascade não encontrado. Usando centro padrão (otimização de tempo).")
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        logger.warning(f"Não foi possível abrir o vídeo {video_path} para face tracking. Usando centro 960.")
         return 960
 
-    if not hasattr(cv2, 'CascadeClassifier'):
-        logger.info("Face tracking: cv2.CascadeClassifier indisponível neste ambiente OpenCV. Usando centro padrão.")
-        return 960
+    total_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+    total_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
+    fallback_center_x = total_width // 2
 
-    logger.info(f"Face tracking: extraindo sub-clipe temporário {start_sec:.1f}s -> {end_sec:.1f}s...")
-    
-    fd, temp_clip_path = tempfile.mkstemp(suffix=".mp4")
-    os.close(fd)
-    
-    current_center_x = 960
+    if not cascade_path or not hasattr(cv2, 'CascadeClassifier'):
+        cap.release()
+        logger.info(f"Face tracking: Haar cascade indisponível. Usando centro padrão ({fallback_center_x}).")
+        return fallback_center_x
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    start_ms = max(0.0, float(start_sec)) * 1000.0
+    cap.set(cv2.CAP_PROP_POS_MSEC, start_ms)
+
+    clip_duration = max(1.0, float(end_sec) - float(start_sec))
+    total_clip_frames = int(clip_duration * fps)
+
+    # Amostrar ~2 frames por segundo (ex: a cada 15 frames em vídeo de 30fps)
+    sample_interval = max(1, int(round(fps / 2.0)))
+    target_process_width = 320
+    scale_factor = target_process_width / total_width if total_width > target_process_width else 1.0
+
+    current_center_x = fallback_center_x
     smoothed_center_x = float(current_center_x)
     frames_processed = 0
+    frames_sampled = 0
     faces_found = 0
 
-    cap = None
-    face_cascade = None
+    face_cascade = cv2.CascadeClassifier(cascade_path)
 
     try:
-        # Extrair clipe sem re-encode (muito rápido)
-        cmd = _ffmpeg_base() + [
-            "-ss", str(start_sec), "-to", str(end_sec),
-            "-i", video_path, "-c", "copy", temp_clip_path
-        ]
-        subprocess.run(cmd, capture_output=True, timeout=3600)
-        
-        cap = cv2.VideoCapture(temp_clip_path)
-        if not cap.isOpened():
-            logger.warning("Não foi possível abrir o vídeo temporário para face tracking. Usando centro padrão.")
-            return 960
-
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        end_frame = min(int((end_sec - start_sec) * fps), max_frames)
-        total_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        total_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        
-        current_center_x = total_width // 2
-        smoothed_center_x = float(current_center_x)
-
-        # Fator de escala para reduzir frames antes do processamento
-        # Reduzir para 480px de largura economiza ~75% de RAM por frame
-        target_process_width = 480
-        scale_factor = target_process_width / total_width if total_width > target_process_width else 1.0
-
-        face_cascade = cv2.CascadeClassifier(cascade_path)
         current_frame = 0
-        frames_sampled = 0
+        while current_frame < total_clip_frames:
+            if current_frame % sample_interval == 0:
+                grabbed = cap.grab()
+                if not grabbed:
+                    break
+                ret, frame = cap.retrieve()
+                if not ret or frame is None:
+                    break
 
-        while current_frame <= end_frame:
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            if current_frame % 5 == 0:  # A cada 5 frames (antes era 3) — reduz processamento
                 frames_sampled += 1
-                # Redimensionar para resolução menor antes de converter para grayscale
                 if scale_factor < 1.0:
                     small_frame = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
                 else:
                     small_frame = frame
 
                 gray = cv2.cvtColor(small_frame, cv2.COLOR_BGR2GRAY)
-                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(30, 30))
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(20, 20))
 
                 if len(faces) > 0:
                     largest_face = max(faces, key=lambda rect: rect[2] * rect[3])
                     x, y, w, h = largest_face
-                    # Converter coordenada de volta para escala original
                     real_center_x = (x + w // 2) / scale_factor
                     smoothed_center_x = alpha * real_center_x + (1.0 - alpha) * smoothed_center_x
                     faces_found += 1
 
-                # Liberar matrizes explicitamente
                 del gray, faces
                 if scale_factor < 1.0:
                     del small_frame
+                del frame
+            else:
+                # Pula frames rapidamente sem decodificar na CPU
+                if not cap.grab():
+                    break
 
-            # Sempre liberar o frame lido
-            del frame
-            frames_processed += 1
             current_frame += 1
+            frames_processed += 1
 
-            # GC periódico a cada 100 frames
-            if frames_processed % 100 == 0:
+            if frames_sampled % 50 == 0:
                 gc.collect()
 
     except Exception as e:
-        logger.warning(f"Erro no face tracking: {e}")
+        logger.warning(f"Erro durante face tracking direto: {e}")
     finally:
-        if cap is not None:
-            cap.release()
-            del cap
-        if face_cascade is not None:
-            del face_cascade
+        cap.release()
+        del cap
+        del face_cascade
         gc.collect()
-        if os.path.exists(temp_clip_path):
-            try:
-                os.remove(temp_clip_path)
-            except OSError:
-                pass
 
     detection_rate = (faces_found / frames_sampled * 100.0) if frames_sampled > 0 else 0.0
     target_crop_w = int(total_height * 9 / 16) if total_height else 608
@@ -240,7 +247,7 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
     final_crop_x = max(0, min(int(smoothed_center_x) - (target_crop_w // 2), total_width - target_crop_w))
 
     logger.info(
-        f"Face tracking concluído: {frames_sampled} frames amostrados (de {frames_processed} lidos), "
+        f"Face tracking concluído: {frames_sampled} frames amostrados (de {frames_processed} analisados), "
         f"{faces_found} detecções (taxa de detecção: {detection_rate:.1f}%), "
         f"crop_x final={final_crop_x} (center_x={int(smoothed_center_x)})."
     )
@@ -363,17 +370,17 @@ def _compute_crop_and_scale(orig_w: int, orig_h: int, aspect_ratio: str, quality
 # Rendering — com gerenciamento de memória estritos
 # ============================================================
 
-def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec: float, end_sec: float, input_path: str, output_path: str):
+def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec: float, end_sec: float, input_path: str, output_path: str, parallelism: int = 1):
     """Executa FFmpeg com fallback automático para CPU se NVENC falhar."""
     result = subprocess.run(primary_cmd, capture_output=True, text=True, timeout=3600)
 
     if result.returncode != 0:
-        encoding_params = get_encoding_params()
+        encoding_params = get_encoding_params(parallelism)
         if encoding_params.get("vcodec") == "h264_nvenc":
             logger.warning("NVENC falhou, desativando NVENC e utilizando CPU com múltiplas threads...")
             global _NVENC_AVAILABLE
             _NVENC_AVAILABLE = False
-            cpu_params = _get_fallback_cpu_params()
+            cpu_params = _get_fallback_cpu_params(parallelism)
             fallback_cmd = _ffmpeg_base() + [
                 "-ss", str(start_sec),
                 "-to", str(end_sec),
@@ -393,7 +400,21 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
             raise RuntimeError(f"FFmpeg falhou. Erro:\n{result.stderr[-1000:]}")
 
 
-def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: float, end_sec: float, orig_w: int, orig_h: int, face_center_x: int, has_subtitles: bool, aspect_ratio: str = "9:16") -> float:
+def render_clip(
+    input_path: str,
+    output_path: str,
+    srt_path: str,
+    start_sec: float,
+    end_sec: float,
+    orig_w: int,
+    orig_h: int,
+    face_center_x: int,
+    has_subtitles: bool,
+    aspect_ratio: str = "9:16",
+    style_name: str = "Yellow",
+    parallelism: int = 1
+) -> float:
+    """Renderiza o clipe final em UM ÚNICO PASSE (crop + scale + legendas integrados)."""
     target_crop_w, target_crop_h, crop_x, crop_y, scale_w, scale_h = _compute_crop_and_scale(orig_w, orig_h, aspect_ratio)
 
     # Ajustar crop_x baseado no face tracking para 9:16
@@ -401,12 +422,18 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
         crop_x = face_center_x - (target_crop_w // 2)
         crop_x = max(0, min(crop_x, orig_w - target_crop_w))
 
-    encoding_params = get_encoding_params()
+    encoding_params = get_encoding_params(parallelism)
     srt_escaped = escape_ffmpeg_path(srt_path) if srt_path else ""
-    sub_style = "FontName=Montserrat,FontSize=20,PrimaryColour=&H0000FFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+    colors = {
+        "Yellow": "&H0000FFFF&",
+        "Green": "&H0000FF00&",
+        "White": "&H00FFFFFF&"
+    }
+    color_code = colors.get(style_name, "&H0000FFFF&")
+    sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
 
     filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale={scale_w}:{scale_h}"
-    if has_subtitles and srt_escaped:
+    if has_subtitles and srt_escaped and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
         filter_complex += f",subtitles='{srt_escaped}':force_style='{sub_style}'"
     filter_complex += "[v]"
 
@@ -425,17 +452,25 @@ def render_clip(input_path: str, output_path: str, srt_path: str, start_sec: flo
     
     t1 = time.time()
     try:
-        _run_ffmpeg_with_fallback(base_cmd, filter_complex, start_sec, end_sec, input_path, output_path)
+        _run_ffmpeg_with_fallback(base_cmd, filter_complex, start_sec, end_sec, input_path, output_path, parallelism)
     except Exception as e:
         raise RuntimeError(f"Erro ao renderizar clipe: {str(e)}")
         
     return time.time() - t1
 
 
-def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style_name: str, add_subtitles: bool = True, quality: str = "1080p", aspect_ratio: str = "9:16") -> float:
+def re_render_clip(
+    input_clean_path: str,
+    output_path: str,
+    srt_path: str,
+    style_name: str,
+    add_subtitles: bool = True,
+    quality: str = "1080p",
+    aspect_ratio: str = "9:16",
+    parallelism: int = 1
+) -> float:
     t1 = time.time()
     
-    # Mapeamento de estilos (cores em formato BGR do ASS script: &Hbbggrr&)
     colors = {
         "Yellow": "&H0000FFFF&",
         "Green": "&H0000FF00&",
@@ -443,10 +478,9 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
     }
     color_code = colors.get(style_name, "&H0000FFFF&")
     
-    srt_escaped = escape_ffmpeg_path(srt_path)
+    srt_escaped = escape_ffmpeg_path(srt_path) if srt_path else ""
     sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
     
-    # Optional scaling down if clean video is 1080p but requested 720p
     scale_filter = ""
     if quality == "720p":
         if aspect_ratio == "16:9":
@@ -457,7 +491,8 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
             scale_filter = "scale=720:1280,"
         
     filter_complex = scale_filter
-    if add_subtitles:
+    has_valid_srt = bool(srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0)
+    if add_subtitles and has_valid_srt:
         filter_complex += f"subtitles='{srt_escaped}':force_style='{sub_style}'"
     else:
         if filter_complex.endswith(","): filter_complex = filter_complex[:-1]
@@ -466,25 +501,23 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
     if filter_complex:
         vf_arg = ["-vf", filter_complex]
     
-    # Sempre usar -hide_banner -loglevel error em todos os paths
+    encoding_params = get_encoding_params(parallelism)
     cmd = _ffmpeg_base() + [
         "-i", input_clean_path,
         *vf_arg,
+        "-map", "0:v",
+        "-map", "0:a?",
         "-c:a", "copy",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-        "-threads", "1",
-        output_path
+        "-c:v", encoding_params.get("vcodec", "libx264"),
+        "-preset", encoding_params.get("preset", "ultrafast"),
+        "-movflags", "+faststart",
     ]
+    if encoding_params.get("vcodec") == "h264_nvenc":
+        cmd.extend(["-cq", encoding_params.get("cq", "23"), "-b:v", "6M"])
+    else:
+        cmd.extend(["-crf", encoding_params.get("crf", "23"), "-threads", _get_optimal_cpu_threads(parallelism)])
+    cmd.append(output_path)
     
-    if is_nvenc_available():
-        cmd = _ffmpeg_base() + [
-            "-i", input_clean_path,
-            *vf_arg,
-            "-c:a", "copy",
-            "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "23", "-b:v", "6M",
-            output_path
-        ]
-        
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if res.returncode != 0:
@@ -492,9 +525,14 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
                 fallback_cmd = _ffmpeg_base() + [
                     "-i", input_clean_path,
                     *vf_arg,
+                    "-map", "0:v",
+                    "-map", "0:a?",
                     "-c:a", "copy",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-                    "-threads", "1",
+                    "-c:v", "libx264",
+                    "-preset", os.getenv("FFMPEG_PRESET", "ultrafast"),
+                    "-crf", os.getenv("FFMPEG_CRF", "23"),
+                    "-movflags", "+faststart",
+                    "-threads", _get_optimal_cpu_threads(parallelism),
                     output_path
                 ]
                 res2 = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=3600)
@@ -510,9 +548,26 @@ def re_render_clip(input_clean_path: str, output_path: str, srt_path: str, style
     return time.time() - t1
 
 
-def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, start_sec: float, end_sec: float, aspect_ratio: str, add_subtitles: bool, style_name: str, quality: str):
+def extract_and_crop_clip(
+    source_path: str,
+    output_path: str,
+    srt_path: str,
+    start_sec: float,
+    end_sec: float,
+    aspect_ratio: str = "9:16",
+    add_subtitles: bool = True,
+    style_name: str = "Yellow",
+    quality: str = "1080p",
+    face_center_x: int = None,
+    parallelism: int = 1
+):
+    """Extrai, corta, enquadra e legenda o clipe em um único passe a partir do vídeo fonte."""
     orig_w, orig_h, _ = get_video_info(source_path)
     target_crop_w, target_crop_h, crop_x, crop_y, scale_w, scale_h = _compute_crop_and_scale(orig_w, orig_h, aspect_ratio, quality)
+
+    if aspect_ratio == "9:16" and face_center_x is not None:
+        crop_x = face_center_x - (target_crop_w // 2)
+        crop_x = max(0, min(crop_x, orig_w - target_crop_w))
 
     filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale={scale_w}:{scale_h}"
 
@@ -525,7 +580,7 @@ def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, sta
         filter_complex += f",subtitles='{srt_escaped}':force_style='{sub_style}'"
     filter_complex += "[v]"
     
-    encoding_params = get_encoding_params()
+    encoding_params = get_encoding_params(parallelism)
     base_cmd = _ffmpeg_base() + [
         "-ss", str(start_sec),
         "-to", str(end_sec),
@@ -539,7 +594,7 @@ def extract_and_crop_clip(source_path: str, output_path: str, srt_path: str, sta
     base_cmd.append(output_path)
     
     try:
-        _run_ffmpeg_with_fallback(base_cmd, filter_complex, start_sec, end_sec, source_path, output_path)
+        _run_ffmpeg_with_fallback(base_cmd, filter_complex, start_sec, end_sec, source_path, output_path, parallelism)
     except Exception as e:
         raise RuntimeError(f"Erro no extract_and_crop: {str(e)}")
 

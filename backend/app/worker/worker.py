@@ -143,41 +143,46 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
     if aspect_ratio != current_aspect: needs_full_render = True
     if abs(new_start - current_start) > 0.5 or abs(new_end - current_end) > 0.5: needs_full_render = True
         
+    face_center_x = clip.get("face_center_x") if clip.get("face_center_x") is not None else clip.get("facecenterx")
+    temp_render_out = os.path.join(temp_dir, f"temp_render_{uuid.uuid4().hex}.mp4")
+
     try:
         generate_srt_from_words(words, srt_path)
         has_source = bool(source_video_path and os.path.exists(source_video_path))
         
-        if needs_full_render or not os.path.exists(output_clean_path):
-            if has_source:
-                extract_and_crop_clip(
-                    source_video_path, output_clean_path, None, 
-                    new_start, new_end, 
-                    aspect_ratio=aspect_ratio, 
-                    add_subtitles=False,
-                    style_name=style,
-                    quality=quality
-                )
-            else:
-                fallback_source = output_clean_path if os.path.exists(output_clean_path) else output_path
-                temp_clean = os.path.join(temp_dir, f"temp_clean_{uuid.uuid4().hex}.mp4")
-                clip_duration = max(0.0, new_end - new_start)
-                if clip_duration <= 0.0: clip_duration = float(clip.get("durationsec") or 30.0)
-                extract_and_crop_clip(
-                    fallback_source, temp_clean, None, 
-                    0.0, clip_duration, 
-                    aspect_ratio=aspect_ratio, 
-                    add_subtitles=False,
-                    style_name=style,
-                    quality=quality
-                )
-                if os.path.exists(temp_clean): shutil.move(temp_clean, output_clean_path)
-            
-            if add_subtitles and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
-                re_render_clip(output_clean_path, output_path, srt_path, style, True, quality, aspect_ratio)
-            else:
-                shutil.copyfile(output_clean_path, output_path)
+        if has_source:
+            logger.info(f"Re-renderizando clipe {clip_id} em passe único a partir do vídeo fonte: {source_video_path} (face_center_x={face_center_x})")
+            extract_and_crop_clip(
+                source_path=source_video_path,
+                output_path=temp_render_out,
+                srt_path=srt_path,
+                start_sec=new_start,
+                end_sec=new_end,
+                aspect_ratio=aspect_ratio,
+                add_subtitles=add_subtitles,
+                style_name=style,
+                quality=quality,
+                face_center_x=face_center_x,
+            )
         else:
-            re_render_clip(output_clean_path, output_path, srt_path, style, add_subtitles, quality, aspect_ratio)
+            logger.warning(
+                f"[AVISO] Vídeo fonte não encontrado em {source_video_path}. "
+                f"Usando o clipe final anterior {output_path} como fonte."
+            )
+            if not os.path.exists(output_path):
+                raise FileNotFoundError(f"Nem o vídeo fonte nem o clipe anterior existem no disco: {output_path}")
+            re_render_clip(
+                input_clean_path=output_path,
+                output_path=temp_render_out,
+                srt_path=srt_path,
+                style_name=style,
+                add_subtitles=add_subtitles,
+                quality=quality,
+                aspect_ratio=aspect_ratio,
+            )
+
+        if os.path.exists(temp_render_out):
+            shutil.move(temp_render_out, output_path)
 
         # Sucesso: atualiza dados e define status COMPLETED
         run_sync(update_clip_render_details(

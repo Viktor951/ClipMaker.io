@@ -102,6 +102,7 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
         "status": project.get("status"),
         "error": project.get("errormessage"),
         "title": project.get("title"),
+        "aiCutsFallback": bool(project.get("ai_cuts_fallback") or project.get("aicutsfallback") or False),
         "clips": clips_list
     }
 

@@ -142,6 +142,82 @@ async def test_project_lifecycle():
         status_resp = await ac.get(f"/api/projects/{project_id}/status", headers=headers)
         assert status_resp.status_code == 200
         assert status_resp.json()["status"] == "PENDING"
+        assert "aiCutsFallback" in status_resp.json()
+        assert status_resp.json()["aiCutsFallback"] is False
+
+
+@pytest.mark.asyncio
+async def test_incremental_clip_saving_and_ai_fallback():
+    from backend.app.db.db_service import save_single_clip, set_project_ai_fallback, create_project
+    async with get_client() as ac:
+        unique_email = f"user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg = await ac.post("/api/v1/auth/register", json={"email": unique_email, "password": pwd})
+        user_id = reg.json()["user_id"]
+        login = await ac.post("/api/v1/auth/login", data={"username": unique_email, "password": pwd})
+        token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        project_id = await create_project(user_id, "Projeto Incremental", "source.mp4", 60.0)
+
+        # Salva clipe incrementalmente
+        clip_data = {
+            "id": str(uuid.uuid4()),
+            "renderedUrl": "clip_test_1.mp4",
+            "title": "Primeiro Clipe Pronto",
+            "startTime": 0.0,
+            "endTime": 15.0,
+            "durationSec": 15.0,
+            "viralScore": 90,
+            "aspectRatio": "9:16",
+            "hookReason": "Hook Forte",
+            "words": [],
+            "thumbnail_key": "thumb_test_1.jpg",
+            "face_center_x": 960
+        }
+        await save_single_clip(project_id, clip_data)
+        await set_project_ai_fallback(project_id, True)
+
+        status_resp = await ac.get(f"/api/projects/{project_id}/status", headers=headers)
+        assert status_resp.status_code == 200
+        data = status_resp.json()
+        assert data["aiCutsFallback"] is True
+        assert len(data["clips"]) == 1
+        assert data["clips"][0]["title"] == "Primeiro Clipe Pronto"
+        assert data["clips"][0]["status"] == "COMPLETED"
+
+
+@pytest.mark.asyncio
+async def test_transcription_cache():
+    from backend.app.db.db_service import create_project, save_transcription, get_cached_transcription
+    async with get_client() as ac:
+        unique_email = f"user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg = await ac.post("/api/v1/auth/register", json={"email": unique_email, "password": pwd})
+        user_id = reg.json()["user_id"]
+
+        project_id = await create_project(user_id, "Projeto Cache", "video.mp4", 30.0)
+        source_url = "https://youtube.com/watch?v=cachetest123"
+        file_hash = "abcdef1234567890"
+        segments = [{"start": 0.0, "end": 5.0, "text": "Olá mundo", "words": []}]
+
+        await save_transcription(
+            project_id=project_id,
+            user_id=user_id,
+            full_text="Olá mundo",
+            segments=segments,
+            source_url=source_url,
+            file_hash=file_hash
+        )
+
+        cached = await get_cached_transcription(user_id, source_url=source_url)
+        assert cached is not None
+        assert cached["full_text"] == "Olá mundo"
+        assert len(cached["segments"]) == 1
+
+        cached_by_hash = await get_cached_transcription(user_id, file_hash=file_hash)
+        assert cached_by_hash is not None
+        assert cached_by_hash["full_text"] == "Olá mundo"
 
 
 def test_viral_score_and_boundaries():

@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     WORKER_CPUS: float = float(os.getenv("WORKER_CPUS", "4.0"))
     WORKER_MEM_LIMIT: str = os.getenv("WORKER_MEM_LIMIT", "6g")
     
+    # Configurações de Rendering e Modelos LLM
+    FFMPEG_PRESET: str = os.getenv("FFMPEG_PRESET", "ultrafast")
+    FFMPEG_CRF: str = os.getenv("FFMPEG_CRF", "23")
+    RENDER_PARALLELISM: int = int(os.getenv("RENDER_PARALLELISM", "0"))
+    GEMINI_MODELS: str = os.getenv("GEMINI_MODELS", "gemini-3.8-flash,gemini-flash-latest,gemini-pro-latest")
+    
     model_config = {
         "env_file": ".env",
         "extra": "ignore"
