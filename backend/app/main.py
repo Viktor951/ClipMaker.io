@@ -73,6 +73,16 @@ app.include_router(project.router, prefix="/api/v1/projects", tags=["project"])
 def health_check():
     return {"status": "ok", "version": settings.VERSION}
 
+@app.get("/api/config")
+@app.get("/api/v1/config")
+def get_config():
+    return {
+        "max_file_size_mb": settings.MAX_FILE_SIZE_MB,
+        "max_duration_sec": settings.MAX_DURATION_SEC,
+        "max_source_height": settings.MAX_SOURCE_HEIGHT,
+        "version": settings.VERSION,
+    }
+
 # Servindo frontend estático opcionalmente em modo de desenvolvimento integrado
 if os.getenv("SERVE_FRONTEND", "false").lower() in ("true", "1"):
     import os

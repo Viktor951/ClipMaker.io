@@ -408,3 +408,18 @@ async def test_concurrent_jobs_limit(monkeypatch):
         assert res.status_code == 429
         assert "simultâneos atingido" in res.json()["detail"]
 
+
+@pytest.mark.asyncio
+async def test_config_endpoints():
+    """Testa que os endpoints /api/config e /api/v1/config retornam a configuração correta."""
+    async with get_client() as ac:
+        for path in ("/api/config", "/api/v1/config"):
+            res = await ac.get(path)
+            assert res.status_code == 200
+            data = res.json()
+            assert "max_file_size_mb" in data
+            assert data["max_file_size_mb"] > 0
+            assert "max_duration_sec" in data
+            assert "max_source_height" in data
+            assert "version" in data
+

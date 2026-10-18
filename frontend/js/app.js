@@ -278,6 +278,26 @@ document.addEventListener('DOMContentLoaded', () => {
     let pollingInterval = null;
     let pollingTimeout = null;
     let currentRenderedProjectId = null;
+    let currentUploadXhr = null;
+    let appConfig = { max_file_size_mb: 2000, max_duration_sec: 14400 };
+
+    async function loadAppConfig() {
+        try {
+            const res = await fetch(`${API_BASE}/v1/config`);
+            if (res.ok) {
+                appConfig = await res.json();
+                const limitEl = document.getElementById('upload-limit-text');
+                if (limitEl && appConfig.max_file_size_mb) {
+                    const mb = appConfig.max_file_size_mb;
+                    const text = mb >= 1000 ? `${(mb / 1000).toFixed(mb % 1000 === 0 ? 0 : 1)}GB` : `${mb}MB`;
+                    limitEl.innerText = `MP4, MOV ou WEBM — até ${text}`;
+                }
+            }
+        } catch (e) {
+            console.warn("Não foi possível carregar config dinâmico da API:", e);
+        }
+    }
+    loadAppConfig();
 
     function stopPolling() {
         if (pollingInterval) {
@@ -294,12 +314,116 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetUIState() {
         isProcessing = false;
+        if (currentUploadXhr) {
+            try { currentUploadXhr.abort(); } catch (e) {}
+            currentUploadXhr = null;
+        }
+        const cancelBtn = document.getElementById('btn-cancel-upload');
+        if (cancelBtn) cancelBtn.classList.add('hidden');
         if (btnGenerateUrl) {
             btnGenerateUrl.disabled = false;
             btnGenerateUrl.innerHTML = 'Processar Link';
         }
         if (fileInput) fileInput.disabled = false;
         if (btnBrowse) btnBrowse.disabled = false;
+    }
+
+    function uploadWithRealProgress(file, uploadRatio, onProgress, onSuccess, onError) {
+        const xhr = new XMLHttpRequest();
+        currentUploadXhr = xhr;
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                const loadedMB = (e.loaded / (1024 * 1024)).toFixed(1);
+                const totalMB = (e.total / (1024 * 1024)).toFixed(1);
+                onProgress(percent, loadedMB, totalMB);
+            }
+        });
+
+        xhr.addEventListener('load', () => {
+            currentUploadXhr = null;
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    onSuccess(data);
+                } catch(e) {
+                    onError(new Error("Resposta inválida do servidor."));
+                }
+            } else {
+                let detail = xhr.statusText;
+                try {
+                    const err = JSON.parse(xhr.responseText);
+                    if (err.detail) detail = err.detail;
+                } catch(e) {}
+                onError(new Error(detail || `Erro no upload (${xhr.status})`));
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            currentUploadXhr = null;
+            onError(new Error("Falha de conexão durante o upload do vídeo."));
+        });
+
+        xhr.addEventListener('abort', () => {
+            currentUploadXhr = null;
+            onError(new Error("Upload cancelado pelo usuário."));
+        });
+
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("aspect_ratio", uploadRatio);
+
+        xhr.open("POST", `${API_BASE}/videos/upload-and-process/`);
+        xhr.setRequestHeader("Authorization", `Bearer ${authToken}`);
+        xhr.send(formData);
+    }
+
+    const btnCancelUpload = document.getElementById('btn-cancel-upload');
+    if (btnCancelUpload) {
+        btnCancelUpload.addEventListener('click', () => {
+            if (currentUploadXhr) {
+                currentUploadXhr.abort();
+                currentUploadXhr = null;
+            }
+            btnCancelUpload.classList.add('hidden');
+            stopPolling();
+            switchView('home');
+            resetUIState();
+        });
+    }
+
+    function updateRenderingBanner(data) {
+        const resultsSection = document.getElementById('results-section');
+        if (!resultsSection) return;
+        let banner = document.getElementById('results-rendering-banner');
+        const queuePos = data.queuePosition || 1;
+        const etaSec = data.estimatedTimeSec || 30;
+        const queueSuffix = queuePos > 1 ? ` (Fila #${queuePos} • ~${etaSec}s)` : ` (~${etaSec}s restantes)`;
+        const clipCount = (data.clips && data.clips.length) || 0;
+
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'results-rendering-banner';
+            banner.className = 'rendering-banner';
+            const clipsContainer = document.getElementById('clips-container');
+            if (clipsContainer && clipsContainer.parentNode) {
+                clipsContainer.parentNode.insertBefore(banner, clipsContainer);
+            }
+        }
+
+        banner.innerHTML = `
+            <div class="rendering-banner-content">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Gerando cortes adicionais com IA... (${clipCount} clipe(s) pronto(s)) • ~${etaSec}s restantes</span>
+            </div>
+            <div style="font-size: 0.8rem; color: var(--accent-ai); font-weight: 600;">Ao vivo</div>
+        `;
+    }
+
+    function removeRenderingBanner() {
+        const banner = document.getElementById('results-rendering-banner');
+        if (banner) banner.remove();
     }
 
     async function startProcessingPipeline(fileOrUrl, isFile) {
@@ -328,23 +452,72 @@ document.addEventListener('DOMContentLoaded', () => {
         if (percentageEl) percentageEl.innerText = "0%";
         if (progressFill) progressFill.style.width = "5%";
 
-        const formData = new FormData();
         const uploadRatio = document.querySelector('input[name="upload-ratio"]:checked')?.value || '9:16';
-        formData.append("aspect_ratio", uploadRatio);
 
-        let endpoint = "";
+        // Item 7: Upload real com XMLHttpRequest, barra de progresso e botão de cancelar
         if (isFile) {
-            formData.append("file", fileOrUrl);
-            endpoint = `${API_BASE}/videos/upload-and-process/`;
-            if (percentageEl) percentageEl.innerText = "Enviando arquivo...";
-        } else {
-            formData.append("url", fileOrUrl);
-            endpoint = `${API_BASE}/videos/upload-url/`;
-            if (percentageEl) percentageEl.innerText = "Baixando vídeo (yt-dlp)...";
+            const maxMB = appConfig.max_file_size_mb || 2000;
+            if (fileOrUrl.size > maxMB * 1024 * 1024) {
+                const sizeMB = (fileOrUrl.size / (1024 * 1024)).toFixed(1);
+                alert(`O arquivo selecionado (${sizeMB}MB) ultrapassa o limite máximo de ${maxMB}MB suportado pelo servidor.`);
+                switchView('home');
+                resetUIState();
+                return;
+            }
+
+            if (percentageEl) percentageEl.innerText = "Preparando upload...";
+            const cancelBtn = document.getElementById('btn-cancel-upload');
+            if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+            uploadWithRealProgress(
+                fileOrUrl,
+                uploadRatio,
+                (percent, loadedMB, totalMB) => {
+                    if (progressFill) progressFill.style.width = `${Math.max(5, percent)}%`;
+                    if (percentageEl) percentageEl.innerText = `Enviando vídeo: ${percent}% (${loadedMB}MB de ${totalMB}MB)`;
+                    if (percent >= 100) {
+                        if (cancelBtn) cancelBtn.classList.add('hidden');
+                        if (percentageEl) percentageEl.innerText = "Upload concluído! Iniciando processamento com IA...";
+                    }
+                },
+                (data) => {
+                    if (cancelBtn) cancelBtn.classList.add('hidden');
+                    if (data.status === "processing" && data.project_id) {
+                        const sourceName = fileOrUrl.name;
+                        localStorage.setItem('clipmaker_active_project', data.project_id);
+                        localStorage.setItem('clipmaker_active_source_name', sourceName);
+
+                        const url = new URL(window.location.href);
+                        url.searchParams.set('project', data.project_id);
+                        history.pushState({ page: 'processing', projectId: data.project_id, sourceName }, '', url.toString());
+
+                        updateStepUI(0);
+                        if (percentageEl) percentageEl.innerText = "Iniciando processamento na fila...";
+                        pollProjectStatus(data.project_id, sourceName);
+                    } else {
+                        throw new Error("Resposta inesperada do servidor.");
+                    }
+                },
+                (error) => {
+                    if (cancelBtn) cancelBtn.classList.add('hidden');
+                    if (error.message !== "Upload cancelado pelo usuário.") {
+                        alert("Erro: " + error.message);
+                    }
+                    switchView('home');
+                    resetUIState();
+                }
+            );
+            return;
         }
 
+        // Processamento de link de vídeo por URL
+        const formData = new FormData();
+        formData.append("aspect_ratio", uploadRatio);
+        formData.append("url", fileOrUrl);
+        if (percentageEl) percentageEl.innerText = "Enviando solicitação de download...";
+
         try {
-            const response = await fetch(endpoint, {
+            const response = await fetch(`${API_BASE}/videos/upload-url/`, {
                 method: "POST",
                 headers: { "Authorization": `Bearer ${authToken}` },
                 body: formData,
@@ -373,7 +546,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             
             if (data.status === "processing" && data.project_id) {
-                const sourceName = isFile ? fileOrUrl.name : fileOrUrl;
+                const sourceName = fileOrUrl;
                 localStorage.setItem('clipmaker_active_project', data.project_id);
                 localStorage.setItem('clipmaker_active_source_name', sourceName);
 
@@ -382,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 history.pushState({ page: 'processing', projectId: data.project_id, sourceName }, '', url.toString());
 
                 updateStepUI(0);
-                if (percentageEl) percentageEl.innerText = isFile ? "Iniciando processamento..." : "📥 Baixando mídia...";
+                if (percentageEl) percentageEl.innerText = "📥 Baixando mídia via fila...";
                 pollProjectStatus(data.project_id, sourceName);
             } else {
                 throw new Error("Resposta inesperada do servidor.");
@@ -400,15 +573,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const progressFill = document.getElementById('progress-fill');
         const processingSection = document.getElementById('processing-section');
         let consecutiveFailures = 0;
+        let pollCount = 0;
 
-        const scheduleNext = (delayMs) => {
+        const scheduleNext = () => {
             if (!isProcessing) return;
+            pollCount++;
+            // Item 5: Polling com backoff progressivo (3s -> 5s -> 10s)
+            let delayMs = 3000;
+            if (pollCount === 1) delayMs = 3000;
+            else if (pollCount === 2) delayMs = 5000;
+            else delayMs = 10000;
+
             pollingTimeout = setTimeout(checkStatus, delayMs);
         };
 
         const checkStatus = async () => {
             if (!isProcessing) return;
             try {
+                // Item 5: Removido ?_t=Date.now() (Nginx já responde com Cache-Control: no-store)
                 const res = await fetch(`${API_BASE}/projects/${projectId}/status`, {
                     headers: { "Authorization": `Bearer ${authToken}` }
                 });
@@ -435,9 +617,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 const finalTitle = data.title || sourceName || "Projeto Salvo";
 
+                // Item 1: Mostre cada clipe assim que ficar pronto sem esperar o projeto inteiro!
+                if (data.clips && data.clips.length > 0 && data.status !== 'FAILED') {
+                    const sourceEl = document.querySelector('.source-name');
+                    if (sourceEl) sourceEl.innerText = finalTitle;
+                    localStorage.setItem('clipmaker_active_project', projectId);
+                    localStorage.setItem('clipmaker_active_source_name', finalTitle);
+
+                    switchView('results');
+                    UI.renderClips(data.clips, projectId);
+
+                    if (data.status !== 'READY') {
+                        updateRenderingBanner(data);
+                    }
+                }
+
                 if (data.status === 'READY') {
                     stopPolling();
                     currentRenderedProjectId = projectId;
+                    removeRenderingBanner();
                     if (percentageEl) {
                         percentageEl.classList.remove('pulse-animation');
                         percentageEl.innerText = "100%";
@@ -456,10 +654,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     url.searchParams.set('project', projectId);
                     history.replaceState({ page: 'results', projectId, sourceName: finalTitle }, '', url.toString());
 
-                    UI.renderClips(data.clips || []);
+                    UI.renderClips(data.clips || [], projectId);
                     resetUIState();
                 } else if (data.status === 'FAILED') {
                     stopPolling();
+                    removeRenderingBanner();
                     if (percentageEl) percentageEl.classList.remove('pulse-animation');
                     alert("Erro no processamento: " + (data.error || "Desconhecido"));
                     localStorage.removeItem('clipmaker_active_project');
@@ -476,6 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     const etaSec = data.estimatedTimeSec || 30;
                     const queueSuffix = queuePos > 1 ? ` (Fila #${queuePos} • ~${etaSec}s)` : ` (~${etaSec}s restantes)`;
 
+                    // Progresso real derivado da API (sem incrementos simulados de +5%)
                     if (data.status === 'DOWNLOADING') {
                         updateStepUI(0);
                         if (percentageEl) percentageEl.innerText = `📥 Baixando vídeo por URL via fila...${queueSuffix}`;
@@ -497,7 +697,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (percentageEl) percentageEl.innerText = `⏳ Na fila de processamento...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '10%';
                     }
-                    scheduleNext(3000);
+                    scheduleNext();
                 }
             } catch (err) {
                 console.error("Falha no polling:", err);
@@ -538,8 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         });
                     }
                 } else {
-                    const backoffMs = Math.min(15000, 2000 * Math.pow(1.5, consecutiveFailures));
-                    scheduleNext(backoffMs);
+                    pollingTimeout = setTimeout(checkStatus, Math.min(15000, 2000 * Math.pow(1.5, consecutiveFailures)));
                 }
             }
         };
@@ -609,7 +808,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     history.replaceState({ page: 'results', projectId, sourceName: finalTitle }, '', url.toString());
                 }
 
-                UI.renderClips(data.clips || []);
+                UI.renderClips(data.clips || [], projectId);
                 resetUIState();
                 return true;
             } else if (data.status === 'FAILED') {
@@ -673,7 +872,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (editorModal) editorModal.addEventListener('click', (e) => { if (e.target === editorModal) UI.closeEditorModal(); });
 
     // History Back / Forward (popstate)
+    // Item 2: Ignora a transição editor -> results e nunca re-renderiza se o projeto já estiver visível e inalterado
     window.addEventListener('popstate', (e) => {
+        if (UI.isClosingEditor) {
+            UI.isClosingEditor = false;
+            return;
+        }
+
         if (editorModal && !editorModal.classList.contains('hidden')) {
             editorModal.classList.add('hidden');
             const videoEl = document.getElementById('editor-video-player');
@@ -694,7 +899,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isResultsVisible = resultsSection && !resultsSection.classList.contains('hidden');
 
         // Ignora transição editor -> results se o projeto já estiver carregado e exibido
-        if (activeProject && isResultsVisible && currentRenderedProjectId === activeProject) {
+        if (activeProject && isResultsVisible && (currentRenderedProjectId === activeProject || UI.renderedProjectId === activeProject)) {
             return;
         }
 

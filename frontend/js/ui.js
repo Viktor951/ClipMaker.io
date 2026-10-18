@@ -29,27 +29,44 @@ const UI = {
     currentClip: null,
     playbackTimer: null,
     simulatedCurrentTime: 0,
+    renderedProjectId: null,
+    isClosingEditor: false,
 
-    renderClips(clips) {
+    renderClips(clips, projectId = null) {
         const container = document.getElementById('clips-container');
         if (!container) return;
 
-        container.innerHTML = '';
+        // Se mudou de projeto, limpa os cards anteriores
+        if (projectId && UI.renderedProjectId !== projectId) {
+            container.innerHTML = '';
+            UI.renderedProjectId = projectId;
+        }
+
+        if (!Array.isArray(clips) || clips.length === 0) return;
 
         clips.forEach((clip) => {
+            const clipIdentifier = clip.clipId || clip.id;
+            if (!clipIdentifier) return;
+
+            // Se o card já está na tela, não recria nem recarrega o vídeo
+            if (container.querySelector(`.clip-preview-container[data-id="${escapeHtml(clipIdentifier)}"]`)) {
+                return;
+            }
+
             const card = document.createElement('div');
             card.className = 'clip-card';
             
             const scoreClass = (clip.viralScore || 0) >= 90 ? 'viral-score-high' : 'viral-score-med';
             const cardRatio = clip.aspectRatio === '16:9' ? '16/9' : (clip.aspectRatio === '1:1' ? '1/1' : '9/16');
             
-            const titleSafe = escapeHtml(clip.title || 'Clipe Gerado (IA)');
+            // Item 3: Exibe sempre o título e o gancho reais da IA
+            const titleSafe = escapeHtml(clip.title || 'Corte Viral (IA)');
             const hookSafe = escapeHtml(clip.hookReason || '');
             
-            const clipIdentifier = clip.clipId || clip.id;
             const videoUrl = getClipVideoUrl(clipIdentifier);
             const thumbnailUrl = getClipThumbnailUrl(clipIdentifier);
-            const mediaContent = `<video src="${videoUrl}" poster="${thumbnailUrl}" controls style="width: 100%; height: 100%; object-fit: contain; background: #000;"></video>`;
+            // Item 4: poster com miniatura real e preload="none"
+            const mediaContent = `<video src="${videoUrl}" poster="${thumbnailUrl}" preload="none" controls class="clip-card-video"></video>`;
 
             card.innerHTML = `
                 <div class="clip-preview-container" data-id="${escapeHtml(clipIdentifier)}" style="aspect-ratio: ${cardRatio};">
@@ -78,26 +95,22 @@ const UI = {
             `;
 
             container.appendChild(card);
-        });
 
-        // Bind clicks for edit and preview
-        container.querySelectorAll('.btn-edit').forEach(el => {
-            el.addEventListener('click', () => {
-                const clipId = el.getAttribute('data-id');
-                const clip = clips.find(c => (c.clipId === clipId || c.id === clipId));
-                if (clip) {
+            // Vincula eventos especificamente para este novo card
+            const editBtn = card.querySelector('.btn-edit');
+            if (editBtn) {
+                editBtn.addEventListener('click', () => {
                     UI.openEditorModal(clip);
-                }
-            });
-        });
+                });
+            }
 
-        container.querySelectorAll('.btn-download').forEach(el => {
-            el.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const clipId = el.getAttribute('data-id');
-                if (!clipId) return;
-                window.location.href = getClipVideoUrl(clipId);
-            });
+            const downloadBtn = card.querySelector('.btn-download');
+            if (downloadBtn) {
+                downloadBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    window.location.href = getClipVideoUrl(clipIdentifier);
+                });
+            }
         });
     },
 
@@ -325,6 +338,7 @@ const UI = {
     },
 
     closeEditorModal() {
+        UI.isClosingEditor = true;
         const modal = document.getElementById('editor-modal');
         if (modal && !modal.classList.contains('hidden')) {
             modal.classList.add('hidden');
@@ -336,6 +350,9 @@ const UI = {
         if (history.state && history.state.page === 'editor') {
             history.back();
         }
+        setTimeout(() => {
+            UI.isClosingEditor = false;
+        }, 300);
     },
 
     highlightActiveWord(index) {
