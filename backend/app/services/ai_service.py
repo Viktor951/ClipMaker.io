@@ -18,86 +18,144 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
     logger.addHandler(handler)
 
-def _detect_device():
-    """Detecta se CUDA está disponível. Fallback seguro para CPU."""
+# ============================================================
+# Whisper — Gerenciamento de Modelo e Cache Global
+# ============================================================
+
+_WHISPER_CACHE = {
+    "model": None,
+    "model_name": None,
+    "device": None,
+    "compute_type": None,
+    "last_used": 0.0,
+}
+
+def _detect_device() -> tuple:
+    """Detecta se CUDA está disponível via ctranslate2. Fallback seguro para CPU."""
     try:
-        import torch
-        if torch.cuda.is_available():
-            logger.info(f"GPU detectada: {torch.cuda.get_device_name(0)}")
+        import ctranslate2
+        cuda_count = ctranslate2.get_cuda_device_count()
+        if cuda_count > 0:
+            logger.info(f"GPU detectada via CTranslate2 ({cuda_count} dispositivo(s) CUDA). Usando float16.")
             return "cuda", "float16"
         else:
-            logger.warning("[AVISO] Rodando Whisper em CPU - isso pode ser mais lento.")
+            logger.info("Nenhuma GPU CUDA detectada via CTranslate2. Usando CPU (int8).")
             return "cpu", "int8"
-    except ImportError:
-        logger.warning("[AVISO] Rodando Whisper em CPU (PyTorch nao instalado).")
+    except Exception as e:
+        logger.warning(f"[AVISO] Falha ao verificar CTranslate2 para CUDA ({e}). Rodando Whisper em CPU (int8).")
         return "cpu", "int8"
+
+def _get_target_model_name(device: str) -> str:
+    """Determina o nome do modelo Whisper com base na configuração e dispositivo."""
+    configured = os.getenv("WHISPER_MODEL", "auto").strip().lower()
+    if configured and configured != "auto":
+        return configured
+    return "small" if device == "cuda" else "base"
+
+def get_whisper_model():
+    """Retorna o modelo Whisper mantido em cache global, respeitando o timeout de ociosidade."""
+    global _WHISPER_CACHE
+    device, compute_type = _detect_device()
+    target_model_name = _get_target_model_name(device)
+    idle_timeout_sec = int(os.getenv("WHISPER_IDLE_TIMEOUT_MINUTES", "15")) * 60
+    now = time.time()
+
+    # Verificar se o cache existente expirou por inatividade ou se mudou de configuração
+    if _WHISPER_CACHE["model"] is not None:
+        is_idle_expired = (now - _WHISPER_CACHE["last_used"]) > idle_timeout_sec
+        is_config_changed = (
+            _WHISPER_CACHE["model_name"] != target_model_name
+            or _WHISPER_CACHE["device"] != device
+            or _WHISPER_CACHE["compute_type"] != compute_type
+        )
+        if is_idle_expired or is_config_changed:
+            motivo = "tempo ocioso expirado" if is_idle_expired else "configuração alterada"
+            logger.info(f"Descarregando modelo Whisper da memória ({motivo}).")
+            del _WHISPER_CACHE["model"]
+            _WHISPER_CACHE["model"] = None
+            gc.collect()
+
+    # Se não está em cache, carregar
+    if _WHISPER_CACHE["model"] is None:
+        from faster_whisper import WhisperModel
+        cpu_threads = min(4, max(2, (os.cpu_count() or 2) // 2))
+        logger.info(
+            f"Carregando modelo Whisper '{target_model_name}' "
+            f"(device={device}, compute_type={compute_type}, threads={cpu_threads if device == 'cpu' else 'GPU'})..."
+        )
+        download_root = os.getenv("HF_HOME")
+        model = WhisperModel(
+            target_model_name,
+            device=device,
+            compute_type=compute_type,
+            cpu_threads=cpu_threads if device == "cpu" else 0,
+            download_root=download_root,
+        )
+        _WHISPER_CACHE["model"] = model
+        _WHISPER_CACHE["model_name"] = target_model_name
+        _WHISPER_CACHE["device"] = device
+        _WHISPER_CACHE["compute_type"] = compute_type
+        logger.info(f"Modelo Whisper '{target_model_name}' carregado e retido em cache global.")
+
+    _WHISPER_CACHE["last_used"] = time.time()
+    return _WHISPER_CACHE["model"]
+
+def preload_whisper_model():
+    """Pré-carrega o modelo Whisper na inicialização para evitar latência no primeiro job."""
+    try:
+        logger.info("Executando pré-carregamento do modelo Whisper...")
+        get_whisper_model()
+    except Exception as e:
+        logger.warning(f"Não foi possível pré-carregar o modelo Whisper na inicialização: {e}")
 
 def transcribe_audio(input_path: str, language: str = "pt") -> list:
     """
-    Transcreve o áudio do vídeo usando Whisper.
-    Auto-detecta CUDA/CPU e garante limpeza de VRAM.
-    
-    Retorna os segmentos como lista de dicts leves (não objetos Whisper),
-    para permitir liberação imediata do modelo e seus buffers internos.
+    Transcreve o áudio do vídeo usando o modelo Whisper em cache.
+    Retorna os segmentos como lista de dicts leves.
     """
-    device, compute_type = _detect_device()
-    logger.info(f"Transcrevendo áudio (Whisper tiny, device={device}, compute={compute_type})...")
     t0 = time.time()
     lightweight_segments = []
-    model = None
-    
+
     try:
-        from faster_whisper import WhisperModel
-        
-        logger.info("Carregando modelo Whisper tiny...")
-        cpu_threads = min(4, max(2, (os.cpu_count() or 2) // 2))
-        model = WhisperModel("tiny", device=device, compute_type="int8", cpu_threads=cpu_threads)
-        logger.info(f"Modelo carregado ({cpu_threads} cpu threads). Iniciando transcrição...")
-        
+        model = get_whisper_model()
+        device = _WHISPER_CACHE["device"]
+        model_name = _WHISPER_CACHE["model_name"]
+        compute_type = _WHISPER_CACHE["compute_type"]
+
+        logger.info(f"Iniciando transcrição de áudio (modelo='{model_name}', device={device}, compute={compute_type})...")
         segments_gen, info = model.transcribe(
-            input_path, 
-            word_timestamps=True, 
+            input_path,
+            word_timestamps=True,
             language=language,
             vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=500)
+            vad_parameters=dict(min_silence_duration_ms=500),
         )
-        
-        # Converter generator em lista de dicts leves imediatamente.
-        # Isso permite que os objetos internos do Whisper sejam liberados com o modelo.
+
         for seg in segments_gen:
             seg_dict = {
                 "start": seg.start,
                 "end": seg.end,
                 "text": seg.text,
-                "words": []
+                "words": [],
             }
-            if hasattr(seg, 'words') and seg.words:
+            if hasattr(seg, "words") and seg.words:
                 for w in seg.words:
                     seg_dict["words"].append({
                         "word": w.word,
                         "start": w.start,
-                        "end": w.end
+                        "end": w.end,
                     })
             lightweight_segments.append(seg_dict)
-        
+
         elapsed = time.time() - t0
         logger.info(f"Transcrição concluída em {elapsed:.1f}s ({len(lightweight_segments)} segmentos)")
-        
+
     except Exception as e:
         logger.error(f"FALHA na transcrição Whisper: {str(e)}", exc_info=True)
         raise RuntimeError(f"FALHA na transcrição Whisper: {str(e)}")
     finally:
-        if model is not None:
-            del model
         gc.collect()
-        try:
-            import torch
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                logger.info("Memória VRAM da GPU liberada com sucesso.")
-        except (ImportError, Exception):
-            pass
-            
+
     return lightweight_segments
 
 def format_transcript_from_segments(segments: list) -> str:

@@ -27,7 +27,8 @@ from backend.app.services.ai_service import get_last_llm_meta
 
 
 def execute_single_run(video_path: str, skip_llm: bool, aspect_ratio: str, keep_output: bool) -> dict:
-    temp_dir = tempfile.mkdtemp(prefix="clipmaker_bench_")
+    base_temp = os.getenv("TEMP_DIR", "/app/backend/temp_videos" if os.path.exists("/app/backend/temp_videos") else None)
+    temp_dir = tempfile.mkdtemp(prefix="clipmaker_bench_", dir=base_temp)
     reset_stage_timings()
     t_start = time.perf_counter()
 

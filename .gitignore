@@ -61,3 +61,4 @@ node_modules/
 .idea/
 .DS_Store
 Thumbs.db
+scratch/

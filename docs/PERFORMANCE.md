@@ -221,3 +221,49 @@ Para total rastreabilidade do corte inteligente em produção, a rotina de track
 [clipmaker.video] Face tracking concluído: 61 frames amostrados (de 301 lidos), 9 detecções (taxa de detecção: 14.8%), crop_x final=652 (center_x=955).
 ```
 
+---
+
+## 9. Etapa 1 — Resultados de Infraestrutura e Configuração
+
+Nesta etapa, o ambiente de execução do worker foi profundamente otimizado em infraestrutura, disco, concorrência e aceleração por hardware:
+
+1. **Recursos de CPU e Memória:**
+   - Tornados configuráveis dinamicamente via `.env` (`WORKER_CPUS=4.0`, `WORKER_MEM_LIMIT=6g`).
+   - Evitou a saturação por oversubscription (threads alinhadas à cota real de CPU).
+2. **Armazenamento de Alta Velocidade (Volume Nomeado Docker):**
+   - Substituição do bind-mount lento do Windows NTFS (`D:\...` via 9P/WSL2) por um volume nomeado Docker gerenciado pelo Linux (`clipmaker_temp_videos`).
+   - Elimina os gargalos de latência de I/O em leitura/escrita de sub-clipes e renderizações intermediárias do FFmpeg.
+   - Mantidos no host `D:` apenas dados leves e persistentes: cache de modelos HuggingFace (`/app/cache`), logs estruturados (`/app/logs`) e dados do Redis.
+3. **Aceleração por GPU (NVIDIA RTX 3050 6GB):**
+   - Criação do target multi-stage `runtime-gpu` no [Dockerfile](file:///c:/Users/João Victor/Documents/Antigravity Projects/ClipMakerAI/Dockerfile) com bibliotecas mínimas `nvidia-cublas-cu12` e `nvidia-cudnn-cu12` via pip (sem necessidade de imagem base CUDA de 10GB).
+   - Whisper agora detecta GPU via `ctranslate2.get_cuda_device_count()` e roda em `float16` (com fallback robusto para `int8` em CPU). Modelo configurável via `WHISPER_MODEL` (padrão `small` em GPU).
+   - FFmpeg no Debian Bookworm recebeu passthrough via `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`, habilitando `h264_nvenc` por hardware nativamente dentro do container.
+4. **Cache Global e Pré-carregamento do Whisper:**
+   - O modelo Whisper é mantido carregado na memória global do processo do worker (`_WHISPER_CACHE`), com descarga automática apenas após `WHISPER_IDLE_TIMEOUT_MINUTES=15` minutos de ociosidade.
+   - Pré-carregado no boot do container do worker para eliminar a latência de cold start no primeiro job.
+5. **Download Otimizado com yt-dlp:**
+   - Adicionada flag `--concurrent-fragments 4` e limite configurável `MAX_SOURCE_HEIGHT` (padrão `1080`) para evitar o download de arquivos 4K pesados quando a saída do pipeline é 1080p.
+
+---
+
+### Tabela 5: Comparativo ANTES x DEPOIS (Etapa 0 Container vs Etapa 1 Container com GPU)
+
+Medições realizadas dentro do container do worker (`clipmaker-prod-worker-1`), rodando 3 execuções consecutivas para cada ambiente no mesmo vídeo de teste (256.56 MB, 6.77 min, 5 clipes gerados com aspect ratio 9:16):
+
+| Fase do Pipeline | ANTES (Etapa 0: CPU 2 cores, 3GB, NTFS) | DEPOIS (Etapa 1: GPU NVENC, 4 cores, 6GB, Volume) | Variação Min - Max (Etapa 1) | Ganho Absoluto (s) | Redução de Tempo (%) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **1. Probe (ffprobe)** | 0.07s | **0.06s** | 0.06s – 0.06s | -0.01s | -14.3% |
+| **2. Transcrição (Whisper)** | 30.37s *(tiny)* | **13.28s** *(small!)* | 13.10s – 24.85s | -17.09s | **-56.3%** |
+| **3. LLM (Detecção Momentos)** | 0.00s | **0.00s** | 0.00s – 0.00s | 0.00s | 0.0% |
+| **4. Face Tracking (OpenCV)** | 16.34s | **8.11s** | 8.01s – 8.46s | -8.23s | **-50.4%** |
+| **5. Render Vídeo (FFmpeg)** | 107.01s *(CPU)* | **40.54s** *(NVENC)* | 40.25s – 41.40s | -66.47s | **-62.1%** |
+| **6. Legendas Burn-in (FFmpeg)**| 77.66s *(CPU)* | **35.56s** *(NVENC)* | 35.03s – 36.38s | -42.10s | **-54.2%** |
+| **7. Overhead / E/S / Thumbs** | 1.78s *(NTFS)* | **1.24s** *(Docker Vol)*| 1.23s – 1.25s | -0.54s | **-30.3%** |
+| **TEMPO TOTAL PIPELINE** | **235.16s** (3m 55s) | **100.65s** (1m 40s) | **98.69s – 109.53s** | **-134.51s** | **-57.2% (-2.34x)** |
+
+*(Nota: Na rodada 1 com modelo frio na memória, a transcrição levou 24.85s; nas rodadas subsequentes com o modelo mantido em cache de processo, a transcrição caiu para 13.10s a 13.28s).*
+
+Se comparado com a linha de base original com Whisper `base` na CPU (343.83s):
+- **O tempo total despencou de 5 minutos e 43 segundos para 1 minuto e 40 segundos (-70.7% de tempo total, uma aceleração de 3.42x)**.
+
+

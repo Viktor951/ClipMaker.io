@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     TEMP_DIR: str = os.getenv("TEMP_DIR", str(_BACKEND_DIR / "temp_videos"))
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "2000"))
     MAX_DURATION_SEC: int = int(os.getenv("MAX_DURATION_SEC", "14400"))
+    MAX_SOURCE_HEIGHT: int = int(os.getenv("MAX_SOURCE_HEIGHT", "1080"))
+
+    # Configurações do Whisper e Worker
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "auto")
+    WHISPER_IDLE_TIMEOUT_MINUTES: int = int(os.getenv("WHISPER_IDLE_TIMEOUT_MINUTES", "15"))
+    WORKER_CPUS: float = float(os.getenv("WORKER_CPUS", "4.0"))
+    WORKER_MEM_LIMIT: str = os.getenv("WORKER_MEM_LIMIT", "6g")
     
     model_config = {
         "env_file": ".env",

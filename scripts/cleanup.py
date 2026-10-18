@@ -1,8 +1,8 @@
 import os
 import time
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMP_DIR = os.path.join(BASE_DIR, "backend", "temp_videos")
-MAX_AGE_HOURS = 24
+TEMP_DIR = os.getenv("TEMP_DIR", os.path.join(BASE_DIR, "backend", "temp_videos"))
+MAX_AGE_HOURS = int(os.getenv("CLEANUP_MAX_AGE_HOURS", "24"))
 
 def cleanup_old_files():
     print("[CLEANUP] Iniciando rotina de limpeza de arquivos antigos...")

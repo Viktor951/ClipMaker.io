@@ -162,11 +162,13 @@ async def process_url(
         except ValueError:
             pass
 
+        max_height = getattr(settings, "MAX_SOURCE_HEIGHT", 1080)
         download_cmd = [
             sys.executable, "-m", "yt_dlp",
             "--force-ipv4",
+            "--concurrent-fragments", "4",
             "--quiet", "--no-progress",
-            "-f", "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "-f", f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "--merge-output-format", "mp4",
             "-o", str(input_path),
             "--", clean_url

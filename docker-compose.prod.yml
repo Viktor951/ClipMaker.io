@@ -2,13 +2,14 @@
 # ClipMakerAI — Docker Compose de PRODUÇÃO
 #   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 #
-# Dados persistentes em D: (DATA_ROOT, padrão D:/docker-data/clipmaker):
-#   videos/  -> uploads e clipes renderizados (compartilhado api + worker)
-#   cache/   -> modelos Whisper (HuggingFace) e cache do yt-dlp
-#   logs/    -> reservado para logs em arquivo (logs padrão vão para stdout)
-#   redis/   -> fila de tarefas (AOF)
-#   caddy/   -> certificados TLS
-# Postgres usa volume nomeado (ver README-DEPLOY.md: bind mount NTFS quebra o initdb).
+# Estratégia de Armazenamento:
+#   - clipmaker_temp_videos (volume nomeado Docker): área de trabalho efêmera
+#     (uploads e clipes) com I/O nativo ext4 rápido, compartilhado entre api, worker e cleanup.
+#   - D: (DATA_ROOT, padrão D:/docker-data/clipmaker):
+#       cache/   -> modelos Whisper (HuggingFace) e cache do yt-dlp
+#       logs/    -> reservado para logs persistentes
+#       redis/   -> fila de tarefas (AOF)
+#   - postgres_data: volume nomeado para estabilidade do PostgreSQL.
 # ==============================================================================
 
 name: clipmaker-prod
@@ -21,9 +22,10 @@ x-app-env: &app-env
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
   ALLOWED_ORIGINS: http://${DOMAIN:-localhost},https://${DOMAIN:-localhost},http://localhost,http://127.0.0.1
   LOG_FORMAT: json
+  MAX_SOURCE_HEIGHT: ${MAX_SOURCE_HEIGHT:-1080}
 
 x-app-volumes: &app-volumes
-  - ${DATA_ROOT:-D:/docker-data/clipmaker}/videos:/app/backend/temp_videos
+  - clipmaker_temp_videos:/app/backend/temp_videos
   - ${DATA_ROOT:-D:/docker-data/clipmaker}/cache:/app/cache
   - ${DATA_ROOT:-D:/docker-data/clipmaker}/logs:/app/logs
 
@@ -55,7 +57,6 @@ services:
       -c max_connections=30
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    # SEM "ports": o banco só é acessível pela rede interna do compose.
     cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
     restart: unless-stopped
     mem_limit: 512m
@@ -88,7 +89,6 @@ services:
   redis:
     <<: *hardening
     image: redis:7-alpine
-    # AOF: tarefas enfileiradas sobrevivem a reinícios. Com senha.
     command: >
       redis-server
       --requirepass ${REDIS_PASSWORD:?defina REDIS_PASSWORD}
@@ -116,6 +116,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: runtime
     image: clipmakerai:prod
     environment: *app-env
     volumes: *app-volumes
@@ -129,15 +130,30 @@ services:
     restart: unless-stopped
     mem_limit: 768m
     cpus: 1.0
-    # healthcheck herdado do Dockerfile (GET /health)
 
-  # ── WORKER (Huey + Whisper + FFmpeg) ──────────────────────────────────────
+  # ── WORKER (Huey + Whisper GPU + FFmpeg) ─────────────────────────────────
   worker:
     <<: *hardening
-    image: clipmakerai:prod
-    command: huey_consumer backend.app.worker.worker.huey -w 1 -k thread
-    environment: *app-env
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime-gpu
+    image: clipmakerai:prod-gpu
+    command: sh -c "python -c 'from backend.app.services.ai_service import preload_whisper_model; preload_whisper_model()' && huey_consumer backend.app.worker.worker.huey -w 1 -k thread"
+    environment:
+      <<: *app-env
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_IDLE_TIMEOUT_MINUTES: ${WHISPER_IDLE_TIMEOUT_MINUTES:-15}
     volumes: *app-volumes
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     depends_on:
       db:
         condition: service_healthy
@@ -148,8 +164,8 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
-    mem_limit: 3g
-    cpus: 2.0
+    mem_limit: ${WORKER_MEM_LIMIT:-6g}
+    cpus: ${WORKER_CPUS:-4.0}
     healthcheck:
       test: ["CMD", "python", "-c", "import os,redis; redis.from_url(os.environ['REDIS_URL']).ping()"]
       interval: 30s
@@ -163,7 +179,7 @@ services:
     image: clipmakerai:prod
     command: sh -c "while true; do python scripts/cleanup.py; sleep 3600; done"
     volumes:
-      - ${DATA_ROOT:-D:/docker-data/clipmaker}/videos:/app/backend/temp_videos
+      - clipmaker_temp_videos:/app/backend/temp_videos
     depends_on:
       api:
         condition: service_healthy
@@ -200,6 +216,6 @@ services:
         max-size: "10m"
         max-file: "5"
 
-
 volumes:
   postgres_data:
+  clipmaker_temp_videos:
