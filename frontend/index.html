@@ -34,9 +34,9 @@
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
-    <link rel="stylesheet" href="css/layout.css?v=a075cd59">
+    <link rel="stylesheet" href="css/layout.css?v=fa3d73a7">
     <link rel="stylesheet" href="css/components.css?v=5d0c6fc6">
-    <link rel="stylesheet" href="css/responsive.css?v=0f37a6d7">
+    <link rel="stylesheet" href="css/responsive.css?v=998abca8">
 </head>
 <body>
 
@@ -44,11 +44,65 @@
     <nav class="navbar" aria-label="Navegação Principal">
         <div class="container nav-content">
             <a href="#" class="logo" aria-label="ClipMaker.io Página Inicial">
-                <svg class="logo-symbol" width="30" height="30" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
-                    <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
-                    <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
-                    <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+                <svg class="logo-symbol" width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <defs>
+                        <radialGradient id="cmNavBadgeBg" cx="50%" cy="32%" r="68%">
+                            <stop offset="0%" stop-color="#142436"/>
+                            <stop offset="55%" stop-color="#0B131C"/>
+                            <stop offset="100%" stop-color="#04070B"/>
+                        </radialGradient>
+                        <linearGradient id="cmNavBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
+                            <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
+                            <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
+                            <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
+                        </linearGradient>
+                        <linearGradient id="cmNavTopGleam" x1="22" y1="4.5" x2="78" y2="4.5" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+                            <stop offset="30%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+                            <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                            <stop offset="70%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+                            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+                        </linearGradient>
+                        <linearGradient id="cmNavLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#76FFB4"/>
+                            <stop offset="30%" stop-color="#2EF287"/>
+                            <stop offset="75%" stop-color="#00E575"/>
+                            <stop offset="100%" stop-color="#00C853"/>
+                        </linearGradient>
+                        <linearGradient id="cmNavPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#BAF7D0"/>
+                            <stop offset="40%" stop-color="#6EE7B7"/>
+                            <stop offset="100%" stop-color="#10B981"/>
+                        </linearGradient>
+                        <linearGradient id="cmNavInnerGlow" x1="50" y1="5" x2="50" y2="95" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.4"/>
+                            <stop offset="50%" stop-color="#00F076" stop-opacity="0.05"/>
+                            <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+                        </linearGradient>
+                        <filter id="cmNavNeonAura" x="20" y="8" width="60" height="84" filterUnits="userSpaceOnUse">
+                            <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                            <feFlood flood-color="#00F076" flood-opacity="0.4" result="color"/>
+                            <feComposite in2="blur" operator="in" result="glow"/>
+                            <feMerge>
+                                <feMergeNode in="glow"/>
+                                <feMergeNode in="SourceGraphic"/>
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmNavBadgeBg)" stroke="url(#cmNavBadgeRim)" stroke-width="2.2"/>
+                    <rect x="5.5" y="5.5" width="89" height="89" rx="19" fill="none" stroke="url(#cmNavInnerGlow)" stroke-width="1"/>
+                    <path d="M 26 5 Q 50 3.8 74 5" stroke="url(#cmNavTopGleam)" stroke-width="1.8" stroke-linecap="round"/>
+                    <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
+                        <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
+                        <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
+                        <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
+                    </g>
+                    <g filter="url(#cmNavNeonAura)">
+                        <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmNavLimeStroke)" stroke-width="6.2"/>
+                    </g>
+                    <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmNavPlayFill)"/>
                 </svg>
                 <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
                 <span class="version-badge">v4.0</span>
@@ -572,11 +626,65 @@
         <div class="container footer-content">
             <div class="footer-brand">
                 <a href="#" class="logo" aria-label="ClipMaker.io Início">
-                    <svg class="logo-symbol" width="26" height="26" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                        <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
-                        <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
-                        <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
-                        <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+                    <svg class="logo-symbol" width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <defs>
+                            <radialGradient id="cmFootBadgeBg" cx="50%" cy="32%" r="68%">
+                                <stop offset="0%" stop-color="#142436"/>
+                                <stop offset="55%" stop-color="#0B131C"/>
+                                <stop offset="100%" stop-color="#04070B"/>
+                            </radialGradient>
+                            <linearGradient id="cmFootBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
+                                <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
+                                <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
+                                <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
+                            </linearGradient>
+                            <linearGradient id="cmFootTopGleam" x1="22" y1="4.5" x2="78" y2="4.5" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+                                <stop offset="30%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+                                <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                                <stop offset="70%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+                                <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+                            </linearGradient>
+                            <linearGradient id="cmFootLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#76FFB4"/>
+                                <stop offset="30%" stop-color="#2EF287"/>
+                                <stop offset="75%" stop-color="#00E575"/>
+                                <stop offset="100%" stop-color="#00C853"/>
+                            </linearGradient>
+                            <linearGradient id="cmFootPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#BAF7D0"/>
+                                <stop offset="40%" stop-color="#6EE7B7"/>
+                                <stop offset="100%" stop-color="#10B981"/>
+                            </linearGradient>
+                            <linearGradient id="cmFootInnerGlow" x1="50" y1="5" x2="50" y2="95" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.4"/>
+                                <stop offset="50%" stop-color="#00F076" stop-opacity="0.05"/>
+                                <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+                            </linearGradient>
+                            <filter id="cmFootNeonAura" x="20" y="8" width="60" height="84" filterUnits="userSpaceOnUse">
+                                <feGaussianBlur stdDeviation="3.2" result="blur"/>
+                                <feFlood flood-color="#00F076" flood-opacity="0.4" result="color"/>
+                                <feComposite in2="blur" operator="in" result="glow"/>
+                                <feMerge>
+                                    <feMergeNode in="glow"/>
+                                    <feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                        <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmFootBadgeBg)" stroke="url(#cmFootBadgeRim)" stroke-width="2.2"/>
+                        <rect x="5.5" y="5.5" width="89" height="89" rx="19" fill="none" stroke="url(#cmFootInnerGlow)" stroke-width="1"/>
+                        <path d="M 26 5 Q 50 3.8 74 5" stroke="url(#cmFootTopGleam)" stroke-width="1.8" stroke-linecap="round"/>
+                        <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
+                            <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
+                            <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
+                            <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
+                        </g>
+                        <g filter="url(#cmFootNeonAura)">
+                            <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmFootLimeStroke)" stroke-width="6.2"/>
+                        </g>
+                        <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmFootPlayFill)"/>
                     </svg>
                     <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
                 </a>

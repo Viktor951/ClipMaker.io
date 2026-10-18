@@ -1,6 +1,44 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="32" height="32" rx="7" fill="#090A0D"/>
-  <rect x="2" y="2" width="28" height="28" rx="6" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
-  <rect x="11.5" y="6" width="9" height="20" rx="2" fill="#00F076" fill-opacity="0.22" stroke="#00F076" stroke-width="1.5"/>
-  <polygon points="15,14 18,16 15,18" fill="#00F076"/>
+<svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="favBadgeBg" cx="50%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#142436"/>
+      <stop offset="55%" stop-color="#0B131C"/>
+      <stop offset="100%" stop-color="#04070B"/>
+    </radialGradient>
+    <linearGradient id="favBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#2D4D73" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#142436" stop-opacity="0.8"/>
+    </linearGradient>
+    <linearGradient id="favLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#76FFB4"/>
+      <stop offset="40%" stop-color="#00F076"/>
+      <stop offset="100%" stop-color="#00C853"/>
+    </linearGradient>
+    <linearGradient id="favPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BAF7D0"/>
+      <stop offset="50%" stop-color="#6EE7B7"/>
+      <stop offset="100%" stop-color="#00E575"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Squircle Badge -->
+  <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#favBadgeBg)" stroke="url(#favBadgeRim)" stroke-width="3"/>
+
+  <!-- Top Specular Glass Reflection -->
+  <path d="M 26 5 Q 50 3.8 74 5" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Crisp Silver Viewfinder Brackets -->
+  <g stroke="#F8FAFC" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
+    <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
+    <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
+    <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
+  </g>
+
+  <!-- Vertical 9:16 Smartphone Frame -->
+  <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.5" stroke="url(#favLimeStroke)" stroke-width="7"/>
+
+  <!-- Playhead Triangle -->
+  <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#favPlayFill)"/>
 </svg>

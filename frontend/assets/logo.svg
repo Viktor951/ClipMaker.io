@@ -1,13 +1,55 @@
-<svg width="180" height="36" viewBox="0 0 180 36" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClipMaker.io">
-  <!-- Símbolo Studio Engine -->
-  <rect x="2" y="3" width="30" height="30" rx="7" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
-  <!-- Colchetes de Timeline / In-Out Points -->
-  <path d="M8 11V8H13M26 8H21V11M8 25V28H13M26 28H21V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
-  <!-- Quadro 9:16 de Corte Central -->
-  <rect x="13" y="8" width="8" height="20" rx="2" fill="#00F076" fill-opacity="0.16" stroke="#00F076" stroke-width="1.5"/>
-  <!-- Playhead Glifo -->
-  <polygon points="16,16 19,18 16,20" fill="#00F076"/>
+<svg width="210" height="42" viewBox="0 0 210 42" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClipMaker.io">
+  <defs>
+    <!-- Background: Deep Midnight Blue-Navy with Dark Vignette -->
+    <radialGradient id="cmFullBadgeBg" cx="50%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#142436"/>
+      <stop offset="55%" stop-color="#0B131C"/>
+      <stop offset="100%" stop-color="#04070B"/>
+    </radialGradient>
+
+    <!-- App Badge Rim (Glass Specular Highlight Gradient) -->
+    <linearGradient id="cmFullBadgeRim" x1="21" y1="2" x2="21" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
+      <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <!-- Neon Lime / Mint Gradient for Vertical 9:16 Frame -->
+    <linearGradient id="cmFullLimeStroke" x1="21" y1="8" x2="21" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#76FFB4"/>
+      <stop offset="30%" stop-color="#2EF287"/>
+      <stop offset="75%" stop-color="#00E575"/>
+      <stop offset="100%" stop-color="#00C853"/>
+    </linearGradient>
+
+    <!-- Playhead Mint to Lime Gradient -->
+    <linearGradient id="cmFullPlayFill" x1="18" y1="17" x2="24" y2="25" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BAF7D0"/>
+      <stop offset="40%" stop-color="#6EE7B7"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Badge Container Group -->
+  <g transform="translate(2, 2) scale(0.38)">
+    <!-- 1. Outer App Squircle Badge Base -->
+    <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmFullBadgeBg)" stroke="url(#cmFullBadgeRim)" stroke-width="2.2"/>
+    <!-- 2. Top Specular Glass Highlight -->
+    <path d="M 26 5 Q 50 3.8 74 5" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/>
+    <!-- 3. Outer Viewfinder / Camera Brackets (Crisp Silver-White) -->
+    <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
+      <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
+      <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
+      <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
+    </g>
+    <!-- 4. Vertical 9:16 Smartphone / Clip Frame -->
+    <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmFullLimeStroke)" stroke-width="6.2"/>
+    <!-- 5. Central Playhead Triangle -->
+    <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmFullPlayFill)"/>
+  </g>
 
   <!-- Tipografia Wordmark ClipMaker.io -->
-  <text x="40" y="24" font-family="'Space Grotesk', 'Inter', system-ui, sans-serif" font-size="18" font-weight="700" fill="#F5F6F8" letter-spacing="-0.02em">ClipMaker<tspan fill="#00F076">.io</tspan></text>
+  <text x="48" y="27" font-family="'Space Grotesk', system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#F5F6F8" letter-spacing="-0.02em">ClipMaker<tspan fill="#00F076">.io</tspan></text>
 </svg>

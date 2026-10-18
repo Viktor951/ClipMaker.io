@@ -1,6 +1,89 @@
-<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClipMaker.io">
-  <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
-  <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
-  <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
-  <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClipMaker.io Símbolo">
+  <defs>
+    <!-- Background: Deep Midnight Blue-Navy with Dark Vignette -->
+    <radialGradient id="cmBadgeBg" cx="50%" cy="32%" r="68%">
+      <stop offset="0%" stop-color="#142436"/>
+      <stop offset="55%" stop-color="#0B131C"/>
+      <stop offset="100%" stop-color="#04070B"/>
+    </radialGradient>
+
+    <!-- App Badge Rim (Glass Specular Highlight Gradient) -->
+    <linearGradient id="cmBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
+      <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
+      <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <!-- Top Gloss Shine Arc -->
+    <linearGradient id="cmTopGleam" x1="22" y1="4.5" x2="78" y2="4.5" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="30%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+      <stop offset="70%" stop-color="#D6ECFF" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Neon Lime / Mint Gradient for Vertical 9:16 Frame -->
+    <linearGradient id="cmLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#76FFB4"/>
+      <stop offset="30%" stop-color="#2EF287"/>
+      <stop offset="75%" stop-color="#00E575"/>
+      <stop offset="100%" stop-color="#00C853"/>
+    </linearGradient>
+
+    <!-- Playhead Mint to Lime Gradient -->
+    <linearGradient id="cmPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#BAF7D0"/>
+      <stop offset="40%" stop-color="#6EE7B7"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+
+    <!-- Ambient Neon Glow for Vertical Frame -->
+    <filter id="cmNeonAura" x="20" y="8" width="60" height="84" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feFlood flood-color="#00F076" flood-opacity="0.4" result="color"/>
+      <feComposite in2="blur" operator="in" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Inner Glass Border Highlight -->
+    <linearGradient id="cmInnerGlow" x1="50" y1="5" x2="50" y2="95" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.4"/>
+      <stop offset="50%" stop-color="#00F076" stop-opacity="0.05"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 1. Outer App Squircle Badge Base -->
+  <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmBadgeBg)" stroke="url(#cmBadgeRim)" stroke-width="2.2"/>
+
+  <!-- 2. Inner Glass Rim Highlight -->
+  <rect x="5.5" y="5.5" width="89" height="89" rx="19" fill="none" stroke="url(#cmInnerGlow)" stroke-width="1"/>
+
+  <!-- 3. Top Specular Glass Highlight -->
+  <path d="M 26 5 Q 50 3.8 74 5" stroke="url(#cmTopGleam)" stroke-width="1.8" stroke-linecap="round"/>
+
+  <!-- 4. Outer Viewfinder / Camera Brackets (Crisp Silver-White) -->
+  <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Top-Left -->
+    <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
+    <!-- Top-Right -->
+    <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
+    <!-- Bottom-Left -->
+    <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
+    <!-- Bottom-Right -->
+    <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
+  </g>
+
+  <!-- 5. Vertical 9:16 Smartphone / Clip Frame (Neon Lime Gradient + Rounded Corners) -->
+  <g filter="url(#cmNeonAura)">
+    <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmLimeStroke)" stroke-width="6.2"/>
+  </g>
+
+  <!-- 6. Central Playhead Triangle (Solid Mint-Green with Soft Rounded Tips) -->
+  <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmPlayFill)"/>
 </svg>

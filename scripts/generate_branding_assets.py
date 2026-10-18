@@ -16,39 +16,55 @@ ASSETS_DIR.mkdir(parents=True, exist_ok=True)
 BG_DARK = (9, 10, 13)       # #090A0D
 SURFACE_CARD = (17, 19, 24) # #111318
 BORDER_COLOR = (38, 42, 54) # #262A36
+BADGE_BG = (13, 21, 32)     # #0D1520
+BADGE_RIM = (75, 110, 150)  # #4B6E96
 LIME_ACCENT = (0, 240, 118) # #00F076
+LIME_BRIGHT = (118, 255, 180)# #76FFB4
+MINT_PLAY = (167, 243, 208) # #A7F3D0
 TEXT_WHITE = (245, 246, 248)# #F5F6F8
+SILVER_BRACKET = (241, 245, 249) # #F1F5F9
 TEXT_MUTED = (142, 150, 166)# #8E96A6
 
 def draw_symbol(draw, x, y, size):
-    """Desenha o símbolo Studio Engine (quadro 9:16 + colchetes + play)."""
-    # Caixa base
-    draw.rounded_rectangle([x, y, x + size, y + size], radius=int(size * 0.22), fill=SURFACE_CARD, outline=BORDER_COLOR, width=max(1, int(size * 0.04)))
-    # Colchetes de corte
-    bracket_pad = int(size * 0.2)
-    bracket_len = int(size * 0.16)
-    bw = max(1, int(size * 0.04))
-    # Top-left
-    draw.line([(x + bracket_pad, y + bracket_pad + bracket_len), (x + bracket_pad, y + bracket_pad), (x + bracket_pad + bracket_len, y + bracket_pad)], fill=TEXT_MUTED, width=bw)
-    # Top-right
-    draw.line([(x + size - bracket_pad - bracket_len, y + bracket_pad), (x + size - bracket_pad, y + bracket_pad), (x + size - bracket_pad, y + bracket_pad + bracket_len)], fill=TEXT_MUTED, width=bw)
-    # Bottom-left
-    draw.line([(x + bracket_pad, y + size - bracket_pad - bracket_len), (x + bracket_pad, y + size - bracket_pad), (x + bracket_pad + bracket_len, y + size - bracket_pad)], fill=TEXT_MUTED, width=bw)
-    # Bottom-right
-    draw.line([(x + size - bracket_pad - bracket_len, y + size - bracket_pad), (x + size - bracket_pad, y + size - bracket_pad), (x + size - bracket_pad, y + size - bracket_pad - bracket_len)], fill=TEXT_MUTED, width=bw)
+    """Desenha o símbolo Studio Engine fiel ao app badge com alto contraste e visibilidade."""
+    # Caixa base squircle
+    rad = int(size * 0.22)
+    bw = max(1, int(size * 0.035))
+    draw.rounded_rectangle([x, y, x + size, y + size], radius=rad, fill=BADGE_BG, outline=BADGE_RIM, width=bw)
     
-    # Quadro vertical 9:16 central
-    qw = int(size * 0.28)
-    qh = int(size * 0.60)
+    # Top specular shine
+    if size >= 32:
+        top_y = y + max(1, int(size * 0.04))
+        draw.line([(x + int(size * 0.25), top_y), (x + int(size * 0.75), top_y)], fill=(255, 255, 255, 200), width=max(1, int(size * 0.02)))
+        
+    # Colchetes de corte (viewfinder) em branco-prata de alto contraste
+    bracket_pad = int(size * 0.22)
+    bracket_len = int(size * 0.14)
+    bracket_w = max(2, int(size * 0.065))
+    
+    # Top-left
+    draw.line([(x + bracket_pad, y + bracket_pad + bracket_len), (x + bracket_pad, y + bracket_pad), (x + bracket_pad + bracket_len, y + bracket_pad)], fill=SILVER_BRACKET, width=bracket_w)
+    # Top-right
+    draw.line([(x + size - bracket_pad - bracket_len, y + bracket_pad), (x + size - bracket_pad, y + bracket_pad), (x + size - bracket_pad, y + bracket_pad + bracket_len)], fill=SILVER_BRACKET, width=bracket_w)
+    # Bottom-left
+    draw.line([(x + bracket_pad, y + size - bracket_pad - bracket_len), (x + bracket_pad, y + size - bracket_pad), (x + bracket_pad + bracket_len, y + size - bracket_pad)], fill=SILVER_BRACKET, width=bracket_w)
+    # Bottom-right
+    draw.line([(x + size - bracket_pad - bracket_len, y + size - bracket_pad), (x + size - bracket_pad, y + size - bracket_pad), (x + size - bracket_pad, y + size - bracket_pad - bracket_len)], fill=SILVER_BRACKET, width=bracket_w)
+    
+    # Quadro vertical 9:16 central (verde neon vibrante)
+    qw = int(size * 0.31)
+    qh = int(size * 0.63)
     qx = x + (size - qw) // 2
     qy = y + (size - qh) // 2
-    draw.rounded_rectangle([qx, qy, qx + qw, qy + qh], radius=int(size * 0.06), fill=(0, 240, 118, 40), outline=LIME_ACCENT, width=max(1, int(size * 0.045)))
+    frame_w = max(2, int(size * 0.065))
+    draw.rounded_rectangle([qx, qy, qx + qw, qy + qh], radius=int(size * 0.10), fill=(0, 24, 11, 100), outline=LIME_ACCENT, width=frame_w)
     
-    # Play centralizado
-    pw = int(size * 0.10)
-    px = x + size // 2 - int(pw * 0.3)
+    # Play centralizado em mint vibrante
+    pw = int(size * 0.12)
+    px = x + size // 2 - int(pw * 0.35)
     py = y + size // 2
-    draw.polygon([(px, py - pw), (px + pw + int(pw * 0.3), py), (px, py + pw)], fill=LIME_ACCENT)
+    draw.polygon([(px, py - pw), (px + int(pw * 1.3), py), (px, py + pw)], fill=MINT_PLAY)
+
 
 def generate_favicons():
     # 1. Favicon 32x32

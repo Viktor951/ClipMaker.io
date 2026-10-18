@@ -67,14 +67,17 @@ body::before {
 }
 
 .logo-symbol {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
-  transition: transform var(--duration-fast) var(--ease-out-expo);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), 0 0 10px rgba(0, 240, 118, 0.12);
+  transition: transform var(--duration-fast) var(--ease-out-expo), box-shadow var(--duration-fast) ease;
 }
 
 .logo:hover .logo-symbol {
-  transform: scale(1.05);
+  transform: scale(1.06);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 16px rgba(0, 240, 118, 0.28);
 }
 
 .logo-text {
