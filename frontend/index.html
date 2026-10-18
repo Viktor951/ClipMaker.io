@@ -34,9 +34,9 @@
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
-    <link rel="stylesheet" href="css/layout.css?v=d305eb64">
+    <link rel="stylesheet" href="css/layout.css?v=2e9a82ce">
     <link rel="stylesheet" href="css/components.css?v=5d0c6fc6">
-    <link rel="stylesheet" href="css/responsive.css?v=998abca8">
+    <link rel="stylesheet" href="css/responsive.css?v=60872474">
 </head>
 <body>
 
@@ -173,26 +173,35 @@
 
                 <div class="upload-ratio-selector">
                     <span class="upload-ratio-label">
-                        <i class="fa-solid fa-crop-simple" aria-hidden="true"></i> Proporção do corte:
+                        <svg class="ratio-label-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <path d="M6 2v14a2 2 0 0 0 2 2h14"></path>
+                            <path d="M18 22V8a2 2 0 0 0-2-2H2"></path>
+                        </svg>
+                        <span>Proporção do corte:</span>
                     </span>
                     <div class="upload-ratio-options" id="upload-ratio-options" role="radiogroup" aria-label="Formato dos cortes">
-                        <label class="ratio-pill active" tabindex="0">
-                            <input type="radio" name="upload-ratio" value="9:16" checked>
-                            <span class="ratio-box ratio-box-9-16" aria-hidden="true"></span>
-                            <span class="ratio-title">9:16</span>
-                            <span class="ratio-hint">Vertical</span>
+                        <label class="ratio-pill active" for="ratio-9-16" tabindex="0">
+                            <input type="radio" id="ratio-9-16" name="upload-ratio" value="9:16" checked class="sr-only">
+                            <svg class="ratio-icon" width="13" height="19" viewBox="0 0 13 19" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <rect x="1" y="1" width="11" height="17" rx="2.5" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <span class="ratio-text">9:16 <span class="ratio-desc">Vertical</span></span>
                         </label>
-                        <label class="ratio-pill" tabindex="0">
-                            <input type="radio" name="upload-ratio" value="16:9">
-                            <span class="ratio-box ratio-box-16-9" aria-hidden="true"></span>
-                            <span class="ratio-title">16:9</span>
-                            <span class="ratio-hint">Horizontal</span>
+
+                        <label class="ratio-pill" for="ratio-16-9" tabindex="0">
+                            <input type="radio" id="ratio-16-9" name="upload-ratio" value="16:9" class="sr-only">
+                            <svg class="ratio-icon" width="19" height="13" viewBox="0 0 19 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <rect x="1" y="1" width="17" height="11" rx="2.5" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <span class="ratio-text">16:9 <span class="ratio-desc">Horizontal</span></span>
                         </label>
-                        <label class="ratio-pill" tabindex="0">
-                            <input type="radio" name="upload-ratio" value="1:1">
-                            <span class="ratio-box ratio-box-1-1" aria-hidden="true"></span>
-                            <span class="ratio-title">1:1</span>
-                            <span class="ratio-hint">Quadrado</span>
+
+                        <label class="ratio-pill" for="ratio-1-1" tabindex="0">
+                            <input type="radio" id="ratio-1-1" name="upload-ratio" value="1:1" class="sr-only">
+                            <svg class="ratio-icon" width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <rect x="1" y="1" width="13" height="13" rx="2.5" stroke="currentColor" stroke-width="2"/>
+                            </svg>
+                            <span class="ratio-text">1:1 <span class="ratio-desc">Quadrado</span></span>
                         </label>
                     </div>
                 </div>
