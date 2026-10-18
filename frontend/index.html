@@ -28,15 +28,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons: Subset vetorial leve local (~3KB, substitui Font Awesome de ~500KB) -->
-    <link rel="stylesheet" href="css/icons.css?v=719f96b4">
+    <link rel="stylesheet" href="css/icons.css?v=9a509dc5">
     
     <!-- Stylesheets -->
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
-    <link rel="stylesheet" href="css/layout.css?v=f6832f6d">
-    <link rel="stylesheet" href="css/components.css?v=f25e06da">
-    <link rel="stylesheet" href="css/responsive.css?v=590edae3">
+    <link rel="stylesheet" href="css/layout.css?v=9e0d8a1a">
+    <link rel="stylesheet" href="css/components.css?v=fc865e87">
+    <link rel="stylesheet" href="css/responsive.css?v=8cd6d797">
 </head>
 <body>
 
@@ -51,6 +51,7 @@
                     <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
                 </svg>
                 <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
+                <span class="version-badge">v4.0</span>
             </a>
             <div class="nav-links">
                 <a href="#como-funciona">Como funciona</a>
@@ -63,103 +64,309 @@
 
     <main class="container">
 
-        <!-- ═══════════ HERO ═══════════ -->
+        <!-- ═══════════ HERO & HOME ═══════════ -->
         <section class="hero" id="hero-section">
+            <div class="hero-badge">
+                <span class="dot"></span>
+                <span>STUDIO ENGINE · IA LOCAL DE ALTA PRECISÃO</span>
+            </div>
+
             <h1 class="hero-title">
-                De um vídeo longo para<br>
+                De vídeos longos para<br>
                 cortes que <span class="highlight">viralizam.</span>
             </h1>
 
             <p class="hero-subtitle">
-                Cole o link. A IA transcreve, encontra os ganchos, recorta em 9:16 e adiciona legendas animadas. Sem editar. Sem pensar.
+                Cole o link. A IA transcreve, encontra os ganchos de abertura, reenquadra em 9:16 e adiciona legendas dinâmicas em alta definição.
             </p>
 
             <!-- Upload Container -->
             <div class="upload-container">
-                <div class="upload-tabs">
-                    <button class="tab-btn active" data-tab="url">
-                        <i class="fa-solid fa-link"></i> Colar URL
+                <div class="upload-tabs" role="tablist" aria-label="Origem do vídeo">
+                    <button class="tab-btn active" role="tab" id="tab-btn-url" aria-selected="true" aria-controls="tab-url" data-tab="url">
+                        <i class="fa-solid fa-link" aria-hidden="true"></i>
+                        <span class="tab-text-full">Link de vídeo</span>
+                        <span class="tab-text-short">Link</span>
                     </button>
-                    <button class="tab-btn" data-tab="file">
-                        <i class="fa-solid fa-arrow-up-from-bracket"></i> Upload
+                    <button class="tab-btn" role="tab" id="tab-btn-file" aria-selected="false" aria-controls="tab-file" data-tab="file">
+                        <i class="fa-solid fa-arrow-up-from-bracket" aria-hidden="true"></i>
+                        <span class="tab-text-full">Enviar arquivo</span>
+                        <span class="tab-text-short">Upload</span>
                     </button>
                 </div>
 
-                <div class="tab-content active" id="tab-url">
+                <div class="tab-content active" id="tab-url" role="tabpanel" aria-labelledby="tab-btn-url">
                     <div class="input-group">
-                        <i class="fa-brands fa-youtube input-icon"></i>
-                        <input type="text" id="video-url" placeholder="Cole o link do YouTube, Twitch ou podcast..." autocomplete="off">
-                        <button class="btn-generate" id="btn-generate-url">
-                            Gerar Clipes <i class="fa-solid fa-arrow-right"></i>
+                        <i class="fa-brands fa-youtube input-icon" aria-hidden="true"></i>
+                        <input type="url" id="video-url" placeholder="https://youtube.com/watch?v=..." autocomplete="off" spellcheck="false" aria-label="URL do vídeo">
+                        <button class="btn-generate" id="btn-generate-url" type="button">
+                            <span>Gerar Clipes</span>
+                            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
                         </button>
                     </div>
                 </div>
 
-                <div class="tab-content" id="tab-file">
-                    <div class="drop-zone" id="drop-zone">
+                <div class="tab-content" id="tab-file" role="tabpanel" aria-labelledby="tab-btn-file">
+                    <div class="drop-zone" id="drop-zone" tabindex="0" role="button" aria-label="Área para arrastar e soltar arquivo de vídeo">
                         <div class="drop-icon">
-                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                            <svg class="drop-icon-svg" width="44" height="44" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                                <rect x="4" y="6" width="40" height="36" rx="8" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4"/>
+                                <path d="M24 14V30M24 14L17 21M24 14L31 21" stroke="var(--accent-ai)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M14 34H34" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
                         </div>
                         <h3>Arraste e solte seu vídeo aqui</h3>
-                        <p id="upload-limit-text">MP4, MOV ou WEBM — até 2GB</p>
-                        <button class="btn-secondary btn-sm" id="btn-browse">Procurar arquivo</button>
+                        <p id="upload-limit-text">MP4, MOV ou WEBM — até 500 MB</p>
+                        <button class="btn-secondary btn-sm" id="btn-browse" type="button">Procurar arquivo</button>
                         <input type="file" id="file-input" hidden accept="video/mp4,video/quicktime,video/webm">
                     </div>
                 </div>
 
                 <div class="upload-ratio-selector">
                     <span class="upload-ratio-label">
-                        <i class="fa-solid fa-crop-simple"></i> Formato dos cortes:
+                        <i class="fa-solid fa-crop-simple" aria-hidden="true"></i> Proporção do corte:
                     </span>
-                    <div class="upload-ratio-options" id="upload-ratio-options">
-                        <label class="ratio-pill active">
+                    <div class="upload-ratio-options" id="upload-ratio-options" role="radiogroup" aria-label="Formato dos cortes">
+                        <label class="ratio-pill active" tabindex="0">
                             <input type="radio" name="upload-ratio" value="9:16" checked>
-                            <i class="fa-solid fa-mobile-screen-button"></i> 9:16 (Vertical)
+                            <span class="ratio-box ratio-box-9-16" aria-hidden="true"></span>
+                            <span class="ratio-title">9:16</span>
+                            <span class="ratio-hint">Vertical</span>
                         </label>
-                        <label class="ratio-pill">
+                        <label class="ratio-pill" tabindex="0">
                             <input type="radio" name="upload-ratio" value="16:9">
-                            <i class="fa-solid fa-desktop"></i> 16:9 (Horizontal)
+                            <span class="ratio-box ratio-box-16-9" aria-hidden="true"></span>
+                            <span class="ratio-title">16:9</span>
+                            <span class="ratio-hint">Horizontal</span>
                         </label>
-                        <label class="ratio-pill">
+                        <label class="ratio-pill" tabindex="0">
                             <input type="radio" name="upload-ratio" value="1:1">
-                            <i class="fa-solid fa-square"></i> 1:1 (Quadrado)
+                            <span class="ratio-box ratio-box-1-1" aria-hidden="true"></span>
+                            <span class="ratio-title">1:1</span>
+                            <span class="ratio-hint">Quadrado</span>
                         </label>
                     </div>
                 </div>
             </div>
 
-            <!-- Hero Demo: Transform Animation -->
-            <div class="hero-demo">
-                <div class="demo-source">
-                    <i class="fa-solid fa-play"></i>
+            <!-- Hero Demo: Studio Engine Visual Transformation -->
+            <div class="hero-demo" aria-label="Demonstração do fluxo de inteligência artificial">
+                <!-- Source 16:9 -->
+                <div class="demo-source-card">
+                    <div class="demo-card-header">
+                        <span class="demo-card-status"><span class="demo-live-dot"></span> VÍDEO LONGO · 16:9</span>
+                        <span class="demo-card-meta">42:18</span>
+                    </div>
+                    <div class="demo-source-preview">
+                        <div class="demo-source-center">
+                            <div class="demo-play-btn"><i class="fa-solid fa-play" aria-hidden="true"></i></div>
+                            <div class="demo-source-tag">Podcast #42: Estratégias Digitais</div>
+                        </div>
+                        <div class="demo-source-waveform" aria-hidden="true">
+                            <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <div class="demo-source-timeline">
+                            <div class="demo-timeline-track">
+                                <div class="demo-timeline-fill"></div>
+                                <div class="demo-clip-marker marker-1" title="Gancho 1"></div>
+                                <div class="demo-clip-marker marker-2" title="Gancho 2"></div>
+                                <div class="demo-clip-marker marker-3" title="Gancho 3"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="demo-arrow">
-                    <i class="fa-solid fa-arrow-right"></i>
-                    <span>AI</span>
+
+                <!-- Pipeline connector -->
+                <div class="demo-pipeline" aria-hidden="true">
+                    <div class="demo-pipeline-badge">
+                        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        <span>WHISPER + IA</span>
+                    </div>
+                    <div class="demo-pipeline-arrow">
+                        <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+                    </div>
                 </div>
+
+                <!-- 3 Vertical 9:16 Clips -->
                 <div class="demo-clips">
-                    <div class="demo-clip-card">
-                        <span class="demo-score">92</span>
+                    <div class="demo-clip-card demo-clip-primary">
+                        <div class="demo-clip-top">
+                            <span class="demo-viral-badge top-tier">
+                                <i class="fa-solid fa-bolt" aria-hidden="true"></i> 95
+                            </span>
+                            <span class="demo-clip-ratio">9:16</span>
+                        </div>
+                        <div class="demo-clip-body">
+                            <div class="demo-face-focus" aria-hidden="true">
+                                <div class="face-target"></div>
+                            </div>
+                            <div class="demo-subtitles">
+                                "O segredo está em <span class="sub-highlight">começar hoje</span> sem esperar!"
+                            </div>
+                        </div>
+                        <div class="demo-clip-footer">
+                            <span class="demo-clip-dur"><i class="fa-solid fa-clock" aria-hidden="true"></i> 00:48</span>
+                            <span class="demo-clip-label">Gancho viral</span>
+                        </div>
                     </div>
+
                     <div class="demo-clip-card">
-                        <span class="demo-score">87</span>
+                        <div class="demo-clip-top">
+                            <span class="demo-viral-badge">
+                                <i class="fa-solid fa-bolt" aria-hidden="true"></i> 89
+                            </span>
+                            <span class="demo-clip-ratio">9:16</span>
+                        </div>
+                        <div class="demo-clip-body">
+                            <div class="demo-face-focus" aria-hidden="true">
+                                <div class="face-target"></div>
+                            </div>
+                            <div class="demo-subtitles">
+                                "Nunca cometa o erro de <span class="sub-highlight">ignorar métricas</span>!"
+                            </div>
+                        </div>
+                        <div class="demo-clip-footer">
+                            <span class="demo-clip-dur"><i class="fa-solid fa-clock" aria-hidden="true"></i> 00:34</span>
+                            <span class="demo-clip-label">Momento chave</span>
+                        </div>
                     </div>
+
                     <div class="demo-clip-card">
-                        <span class="demo-score">84</span>
+                        <div class="demo-clip-top">
+                            <span class="demo-viral-badge">
+                                <i class="fa-solid fa-bolt" aria-hidden="true"></i> 84
+                            </span>
+                            <span class="demo-clip-ratio">9:16</span>
+                        </div>
+                        <div class="demo-clip-body">
+                            <div class="demo-face-focus" aria-hidden="true">
+                                <div class="face-target"></div>
+                            </div>
+                            <div class="demo-subtitles">
+                                "Essa técnica simples gerou <span class="sub-highlight">10x mais alcance</span>."
+                            </div>
+                        </div>
+                        <div class="demo-clip-footer">
+                            <span class="demo-clip-dur"><i class="fa-solid fa-clock" aria-hidden="true"></i> 00:52</span>
+                            <span class="demo-clip-label">Dica rápida</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Social Proof -->
-            <div class="social-proof">
-                <p>Usado por 12.000+ criadores no Brasil</p>
-                <div class="logos">
-                    <i class="fa-brands fa-tiktok"></i>
-                    <i class="fa-brands fa-instagram"></i>
-                    <i class="fa-brands fa-youtube"></i>
-                    <i class="fa-brands fa-twitch"></i>
+            <!-- Authentic Compatibility & Tech Specs -->
+            <div class="tech-trust-bar">
+                <p class="tech-trust-label">Compatível com links e uploads de</p>
+                <div class="tech-trust-items">
+                    <div class="tech-trust-chip">
+                        <i class="fa-brands fa-youtube" aria-hidden="true"></i>
+                        <span>YouTube</span>
+                    </div>
+                    <div class="tech-trust-chip">
+                        <i class="fa-brands fa-twitch" aria-hidden="true"></i>
+                        <span>Twitch</span>
+                    </div>
+                    <div class="tech-trust-chip">
+                        <i class="fa-solid fa-file-video" aria-hidden="true"></i>
+                        <span>MP4 / MOV / WEBM</span>
+                    </div>
+                    <div class="tech-trust-chip">
+                        <i class="fa-solid fa-podcast" aria-hidden="true"></i>
+                        <span>Podcasts & Lives</span>
+                    </div>
+                </div>
+
+                <div class="tech-specs-ribbon">
+                    <span><i class="fa-solid fa-bolt" aria-hidden="true"></i> Transcrição Whisper</span>
+                    <span class="ribbon-sep" aria-hidden="true">·</span>
+                    <span><i class="fa-solid fa-expand" aria-hidden="true"></i> Detecção de Rostos com IA</span>
+                    <span class="ribbon-sep" aria-hidden="true">·</span>
+                    <span><i class="fa-solid fa-closed-captioning" aria-hidden="true"></i> Legendas Dinâmicas</span>
+                    <span class="ribbon-sep" aria-hidden="true">·</span>
+                    <span><i class="fa-solid fa-sliders" aria-hidden="true"></i> Render em Passe Único</span>
                 </div>
             </div>
+
+            <!-- ═══════════ SEÇÃO: COMO FUNCIONA ═══════════ -->
+            <section class="section-how" id="como-funciona" aria-labelledby="how-title">
+                <div class="section-header">
+                    <span class="section-badge">Fluxo de Trabalho</span>
+                    <h2 id="how-title" class="section-title">Como funciona em 3 passos</h2>
+                    <p class="section-desc">Do vídeo bruto aos cortes verticais prontos em minutos, sem softwares pesados de edição.</p>
+                </div>
+
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-card-num">01</div>
+                        <div class="step-card-icon">
+                            <i class="fa-solid fa-link" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="step-card-title">Cole o link ou envie o arquivo</h3>
+                        <p class="step-card-text">Insira uma URL do YouTube ou Twitch, ou envie um vídeo MP4, MOV ou WEBM de até 500 MB. O sistema analisa o material com total privacidade.</p>
+                    </div>
+
+                    <div class="step-card">
+                        <div class="step-card-num">02</div>
+                        <div class="step-card-icon">
+                            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="step-card-title">IA analisa e reenquadra</h3>
+                        <p class="step-card-text">O Whisper transcreve cada palavra com precisão milimétrica, o algoritmo avalia ganchos de abertura e centraliza oradores no formato vertical 9:16.</p>
+                    </div>
+
+                    <div class="step-card">
+                        <div class="step-card-num">03</div>
+                        <div class="step-card-icon">
+                            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="step-card-title">Edite e baixe no navegador</h3>
+                        <p class="step-card-text">Revise os clipes gerados com pontuação de viralidade, ajuste a transcrição se desejar, configure as legendas e exporte em alta resolução.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ═══════════ SEÇÃO: RECURSOS ═══════════ -->
+            <section class="section-features" id="recursos" aria-labelledby="features-title">
+                <div class="section-header">
+                    <span class="section-badge">Tecnologia Studio Engine</span>
+                    <h2 id="features-title" class="section-title">Recursos projetados para criadores</h2>
+                    <p class="section-desc">Pipeline de ponta a ponta construído para velocidade, consistência e máximo engajamento.</p>
+                </div>
+
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon-wrapper">
+                            <i class="fa-solid fa-fire" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="feature-card-title">Pontuação de Viralidade</h3>
+                        <p class="feature-card-text">Algoritmo inteligente que analisa entonação de voz, ganchos de abertura e densidade de informação para classificar os clipes de maior potencial.</p>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-icon-wrapper">
+                            <i class="fa-solid fa-expand" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="feature-card-title">Reenquadramento Inteligente</h3>
+                        <p class="feature-card-text">Detecção contínua de rostos (face tracking) que mantém os participantes centralizados no enquadramento vertical 9:16 sem cortes manuais.</p>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-icon-wrapper">
+                            <i class="fa-solid fa-closed-captioning" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="feature-card-title">Legendas Dinâmicas em Passe Único</h3>
+                        <p class="feature-card-text">Sincronização precisa palavra por palavra com destaque de cor nos termos de maior impacto, renderizadas diretamente sem perda de qualidade.</p>
+                    </div>
+
+                    <div class="feature-card">
+                        <div class="feature-icon-wrapper">
+                            <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+                        </div>
+                        <h3 class="feature-card-title">Editor no Navegador</h3>
+                        <p class="feature-card-text">Ajuste os pontos de início e fim, edite palavras diretamente na transcrição, alterne entre 9:16, 16:9 e 1:1 e baixe instantaneamente.</p>
+                    </div>
+                </div>
+            </section>
         </section>
 
         <!-- ═══════════ PROCESSING ═══════════ -->
@@ -355,9 +562,57 @@
 
     </main>
 
+    <!-- ═══════════ FOOTER ═══════════ -->
+    <footer class="app-footer" aria-label="Rodapé do site">
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <a href="#" class="logo" aria-label="ClipMaker.io Início">
+                    <svg class="logo-symbol" width="26" height="26" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
+                        <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
+                        <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
+                        <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+                    </svg>
+                    <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
+                </a>
+                <p class="footer-tagline">Transforme vídeos longos em cortes virais com inteligência artificial e renderização em passe único.</p>
+            </div>
+
+            <div class="footer-links-grid">
+                <div class="footer-col">
+                    <span class="footer-col-title">Navegação</span>
+                    <a href="#hero-section">Início</a>
+                    <a href="#como-funciona">Como funciona</a>
+                    <a href="#recursos">Recursos</a>
+                </div>
+
+                <div class="footer-col">
+                    <span class="footer-col-title">Formatos</span>
+                    <a href="#hero-section">9:16 Vertical (Reels/Shorts)</a>
+                    <a href="#hero-section">16:9 Horizontal (YouTube)</a>
+                    <a href="#hero-section">1:1 Quadrado (Feed)</a>
+                </div>
+
+                <div class="footer-col">
+                    <span class="footer-col-title">Desenvolvedores</span>
+                    <a href="/docs" target="_blank" rel="noopener">Documentação OpenAPI</a>
+                    <a href="#hero-section">Privacidade & Termos</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="container footer-bottom">
+            <p class="footer-copy">© 2026 ClipMaker.io · Todos os direitos reservados.</p>
+            <div class="footer-status">
+                <span class="status-dot"></span>
+                <span>Pipeline de Render: Operacional</span>
+            </div>
+        </div>
+    </footer>
+
     <!-- Scripts com defer e versionamento -->
     <script src="js/ui.js?v=a5388e53" defer></script>
-    <script src="js/app.js?v=aa0fe2f3" defer></script>
+    <script src="js/app.js?v=a2bdb61b" defer></script>
 
 </body>
 </html>

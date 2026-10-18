@@ -1,39 +1,85 @@
 /* ═══════════════════════════════════════════════
    ClipMaker.io — Responsive Breakpoints
+   Direção A: Studio Engine
    ═══════════════════════════════════════════════ */
 
+/* Responsive visibility utilities */
+.desktop-only { display: inline; }
+.tab-text-short { display: none; }
+.tab-text-full { display: inline; }
+
 @media (max-width: 768px) {
+  main {
+    padding-top: 5.5rem;
+  }
+
   .hero {
-    padding: 2.5rem 0 2rem;
+    padding: 2rem 0 2.5rem;
   }
 
   .hero-title {
-    font-size: 2rem;
+    font-size: 2.1rem;
   }
 
   .hero-subtitle {
-    font-size: 1rem;
+    font-size: 0.95rem;
+    margin-bottom: 2rem;
   }
 
   .hero-demo {
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1.5rem;
   }
 
-  .demo-arrow {
+  .demo-source-card {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .demo-pipeline {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+
+  .demo-pipeline-arrow {
     transform: rotate(90deg);
   }
 
   .demo-clips {
-    gap: 0.5rem;
+    gap: 0.6rem;
+    width: 100%;
+    justify-content: center;
   }
 
   .demo-clip-card {
-    width: 65px;
+    width: 100px;
   }
 
   .nav-links a:not([class*="btn"]) {
-    display: none;
+    display: none !important;
+  }
+
+  .steps-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .features-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+
+  .section-how, .section-features {
+    margin-top: 4rem;
+  }
+
+  .footer-content {
+    flex-direction: column;
+    gap: 2rem;
+  }
+
+  .footer-links-grid {
+    gap: 2rem;
   }
 
   .editor-layout {
@@ -49,7 +95,7 @@
   }
 
   .upload-container {
-    padding: 1rem;
+    padding: 1.25rem;
   }
 
   .results-header {
@@ -59,22 +105,70 @@
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .container {
-    padding: 0 1rem;
+    padding: 0 0.875rem;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .tab-text-full {
+    display: none !important;
+  }
+
+  .tab-text-short {
+    display: inline !important;
+  }
+
+  .logo {
+    font-size: 1.1rem;
+    gap: 0.4rem;
+  }
+
+  .logo-symbol {
+    width: 24px;
+    height: 24px;
+  }
+
+  .version-badge {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.35rem;
+  }
+
+  #btn-login-nav {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.8rem;
+    display: inline-flex !important;
+  }
+
+  #btn-register-nav {
+    display: none !important;
   }
 
   .hero-title {
-    font-size: 1.75rem;
+    font-size: clamp(1.35rem, 5.8vw, 1.75rem);
+    line-height: 1.22;
+    letter-spacing: -0.015em;
   }
 
-  .btn-generate {
-    padding: 0.6rem 1rem;
+  .upload-container {
+    padding: 1rem;
+  }
+
+  .upload-tabs {
+    gap: 0.25rem;
+  }
+
+  .tab-btn {
+    padding: 0.5rem 0.5rem;
     font-size: 0.8rem;
   }
 
   .input-group {
     flex-direction: column;
+    align-items: stretch;
     border-radius: var(--radius-md);
     padding: 0.75rem;
     gap: 0.75rem;
@@ -93,11 +187,81 @@
     display: none;
   }
 
-  .demo-source {
-    width: 140px;
+  .upload-ratio-options {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .ratio-pill {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .demo-clips {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.45rem;
+    width: 100%;
   }
 
   .demo-clip-card {
-    width: 52px;
+    width: 100%;
+    min-width: 0;
+    padding: 0.4rem;
+  }
+
+  .demo-clip-top {
+    gap: 0.2rem;
+  }
+
+  .demo-viral-badge {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.25rem;
+  }
+
+  .demo-clip-ratio {
+    font-size: 0.55rem;
+  }
+
+  .demo-face-focus {
+    width: 24px;
+    height: 24px;
+  }
+
+  .face-target {
+    width: 8px;
+    height: 8px;
+  }
+
+  .demo-subtitles {
+    font-size: 0.525rem;
+    padding: 0.2rem;
+    line-height: 1.2;
+  }
+
+  .demo-clip-footer {
+    font-size: 0.55rem;
+  }
+
+  .tech-trust-chip {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.65rem;
+  }
+
+  .tech-specs-ribbon {
+    font-size: 0.75rem;
+    gap: 0.4rem;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    text-align: center;
+    gap: 0.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-title {
+    font-size: 1.35rem;
   }
 }

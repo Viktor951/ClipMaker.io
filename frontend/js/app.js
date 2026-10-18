@@ -187,9 +187,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabButtons = document.querySelectorAll('.tab-btn');
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
-            tabButtons.forEach(b => b.classList.remove('active'));
+            tabButtons.forEach(b => {
+                b.classList.remove('active');
+                b.setAttribute('aria-selected', 'false');
+            });
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             btn.classList.add('active');
+            btn.setAttribute('aria-selected', 'true');
             const targetId = `tab-${btn.dataset.tab}`;
             const targetContent = document.getElementById(targetId);
             if (targetContent) targetContent.classList.add('active');
@@ -198,19 +202,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ratioPills = document.querySelectorAll('.ratio-pill');
     ratioPills.forEach(pill => {
-        pill.addEventListener('click', () => {
+        const selectPill = () => {
             ratioPills.forEach(p => {
                 p.classList.remove('active');
-                p.style.borderColor = 'var(--border-subtle)';
-                p.style.color = 'var(--text-300)';
+                p.removeAttribute('style');
                 const input = p.querySelector('input');
                 if (input) input.checked = false;
             });
             pill.classList.add('active');
-            pill.style.borderColor = 'var(--accent-ai)';
-            pill.style.color = 'var(--text-100)';
+            pill.removeAttribute('style');
             const input = pill.querySelector('input');
             if (input) input.checked = true;
+        };
+
+        pill.addEventListener('click', selectPill);
+        pill.addEventListener('keydown', (e) => {
+            if (e.key === ' ' || e.key === 'Enter') {
+                e.preventDefault();
+                selectPill();
+            }
         });
     });
 
