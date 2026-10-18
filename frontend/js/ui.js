@@ -1,7 +1,7 @@
 // UI Controller and rendering helpers
-const API_BASE_URL = window.API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost:8000' : '');
-window.API_BASE_URL = API_BASE_URL;
-const API_BASE = `${API_BASE_URL}/api`;
+window.API_BASE_URL = window.API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost' : '');
+var API_BASE_URL = window.API_BASE_URL;
+var API_BASE = `${window.API_BASE_URL}/api`;
 
 function escapeHtml(str) {
     if (!str) return '';

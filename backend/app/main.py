@@ -48,14 +48,13 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
 cors_origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]
-if settings.ENVIRONMENT != "production":
-    for dev_origin in [
-        "http://localhost", "http://localhost:8000", "http://localhost:3000", "http://localhost:5173", "http://localhost:8080",
-        "http://127.0.0.1", "http://127.0.0.1:8000", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080",
-        "null"
-    ]:
-        if dev_origin not in cors_origins:
-            cors_origins.append(dev_origin)
+for common_origin in [
+    "http://localhost", "http://localhost:8000", "http://localhost:3000", "http://localhost:5173", "http://localhost:8080",
+    "http://127.0.0.1", "http://127.0.0.1:8000", "http://127.0.0.1:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080",
+    "null"
+]:
+    if common_origin not in cors_origins:
+        cors_origins.append(common_origin)
 
 app.add_middleware(
     CORSMiddleware,

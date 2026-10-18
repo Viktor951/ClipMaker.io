@@ -1,6 +1,6 @@
 // URL Base da API no Front-end (suporta execução via http/https e diretamente via file:///)
-const API_BASE_URL = window.API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost:8000' : '');
-window.API_BASE_URL = API_BASE_URL;
+window.API_BASE_URL = window.API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost' : '');
+var API_BASE_URL = window.API_BASE_URL;
 
 // Main application logic and orchestrator
 document.addEventListener('DOMContentLoaded', () => {
@@ -175,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 let errorMsg = err.message || "Ocorreu um erro inesperado.";
                 // Detectar falhas de rede, CORS ou servidor backend desligado
                 if (err instanceof TypeError && (err.message.includes('fetch') || err.message.includes('NetworkError') || err.message.includes('Failed to fetch'))) {
-                    const targetHost = API_BASE_URL || 'http://localhost:8000';
+                    const targetHost = API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost' : window.location.origin);
                     errorMsg = `Não foi possível conectar ao servidor backend (${targetHost}). Verifique se o servidor está em execução.`;
                 }
                 showToast(errorMsg, "error", 6000);
