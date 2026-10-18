@@ -43,9 +43,12 @@ async def test_watchdog_stale_projects():
     )
 
     db = await get_backend()
-    # Retrocede updatedAt para 90 minutos no passado
-    past_time = (datetime.now(timezone.utc) - timedelta(minutes=90)).strftime("%Y-%m-%d %H:%M:%S")
-    await db.execute("UPDATE projects SET updatedAt = $1 WHERE id = $2", past_time, project_id)
+    from backend.app.db.db_service import PostgresBackend
+    past_dt = (datetime.now(timezone.utc) - timedelta(minutes=90)).replace(tzinfo=None)
+    past_val = past_dt if isinstance(db, PostgresBackend) else past_dt.strftime("%Y-%m-%d %H:%M:%S")
+    await db.execute("UPDATE projects SET updatedAt = $1 WHERE id = $2", past_val, project_id)
+
+
 
     # Executa o watchdog com limite de 60 minutos
     affected = await fail_stale_projects(stale_minutes=60)

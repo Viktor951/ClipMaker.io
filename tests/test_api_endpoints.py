@@ -272,8 +272,8 @@ async def test_async_url_route_queue_and_status(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_x_accel_redirect_and_fallback():
-    """Testa entrega acelerada via X-Accel-Redirect com header de proxy e fallback FileResponse."""
+async def test_x_accel_redirect_and_fallback(monkeypatch):
+    """Testa entrega acelerada via X-Accel-Redirect com USE_NGINX_ACCEL e fallback FileResponse."""
     from backend.app.core.config import settings
     from backend.app.db.db_service import create_project, save_single_clip
     from pathlib import Path
@@ -311,23 +311,186 @@ async def test_x_accel_redirect_and_fallback():
         })
 
         try:
-            # 1. Com suporte a proxy/Nginx -> X-Accel-Redirect
-            accel_headers = {**headers, "X-Request-Accel": "1"}
-            res_accel = await ac.get(f"/api/videos/download/{clip_id}", headers=accel_headers)
+            # 1. Com suporte a proxy/Nginx via USE_NGINX_ACCEL=true -> X-Accel-Redirect
+            monkeypatch.setenv("USE_NGINX_ACCEL", "true")
+            res_accel = await ac.get(f"/api/videos/download/{clip_id}", headers=headers)
             assert res_accel.status_code == 200
             assert "x-accel-redirect" in res_accel.headers
             assert res_accel.headers["x-accel-redirect"] == f"/internal_videos/{video_filename}"
             assert res_accel.headers.get("accept-ranges") == "bytes"
 
-            # 2. Sem Nginx / dev local -> FileResponse
-            no_accel_headers = {**headers, "X-Disable-Accel": "1"}
-            res_direct = await ac.get(f"/api/videos/download/{clip_id}", headers=no_accel_headers)
+            # 2. Sem Nginx / dev local via USE_NGINX_ACCEL=false -> FileResponse
+            monkeypatch.setenv("USE_NGINX_ACCEL", "false")
+            res_direct = await ac.get(f"/api/videos/download/{clip_id}", headers=headers)
             assert res_direct.status_code == 200
             assert "x-accel-redirect" not in res_direct.headers
             assert len(res_direct.content) > 0
         finally:
             if dummy_file.exists():
                 dummy_file.unlink()
+
+
+def test_anti_ssrf_validation(monkeypatch):
+    """Testa validação Anti-SSRF completa (IPv4/IPv6, localhost, IPs privados, hostname sem DNS, file:// e DNS mockado)."""
+    from backend.app.api.routers.video import _is_safe_public_url
+    import socket
+
+    # 1. localhost
+    assert _is_safe_public_url("http://localhost/video.mp4") is False
+    assert _is_safe_public_url("https://localhost:8000/video.mp4") is False
+
+    # 2. 127.0.0.1
+    assert _is_safe_public_url("http://127.0.0.1/video.mp4") is False
+
+    # 3. 10.0.0.1 (IP privado)
+    assert _is_safe_public_url("http://10.0.0.1/video.mp4") is False
+
+    # 4. 169.254.169.254 (link-local / AWS metadata)
+    assert _is_safe_public_url("http://169.254.169.254/latest/meta-data") is False
+
+    # 5. [::1] (IPv6 loopback)
+    assert _is_safe_public_url("http://[::1]/video.mp4") is False
+
+    # 6. Hostname que não resolve (falha fechado)
+    assert _is_safe_public_url("http://unresolvable-domain-xyz-nonexistent-1234.org/video.mp4") is False
+
+    # 7. Esquema file://
+    assert _is_safe_public_url("file:///etc/passwd") is False
+    assert _is_safe_public_url("file://localhost/d:/video.mp4") is False
+
+    # 8. URL pública válida (mockando a resolução de DNS com socket.getaddrinfo)
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 80))]
+
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo)
+    assert _is_safe_public_url("https://example.com/valid_video.mp4") is True
+
+    # 9. Teste de DNS Rebinding: se um dos IPs resolvidos for privado, rejeita
+    def mock_getaddrinfo_mixed(host, port, *args, **kwargs):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 80)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 80))
+        ]
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo_mixed)
+    assert _is_safe_public_url("https://example.com/rebinding.mp4") is False
+
+
+@pytest.mark.asyncio
+async def test_hmac_signed_urls_and_token_query_removal():
+    """
+    Testes de URLs assinadas HMAC:
+    1. Assinatura válida: download e thumbnail permitidos sem header Authorization.
+    2. Assinatura expirada: retorna HTTP 403.
+    3. Assinatura adulterada: retorna HTTP 403.
+    4. Assinatura usada em outro clipe: retorna HTTP 403.
+    5. Remoção de ?token=<JWT> em get_current_user: retorna HTTP 401.
+    6. Status do projeto inclui videoUrl e thumbnailUrl assinados.
+    """
+    from backend.app.core.config import settings
+    from backend.app.db.db_service import create_project, save_single_clip
+    from backend.app.core.security import create_signed_url_token
+    from pathlib import Path
+
+    temp_dir = Path(settings.TEMP_DIR)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    async with get_client() as ac:
+        email = f"sig_user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg = await ac.post("/api/v1/auth/register", json={"email": email, "password": pwd})
+        user_id = reg.json()["user_id"]
+        login = await ac.post("/api/v1/auth/login", data={"username": email, "password": pwd})
+        jwt_token = login.json()["access_token"]
+        headers = {"Authorization": f"Bearer {jwt_token}"}
+
+        project_id = await create_project(user_id, "Projeto Signed URL", "video.mp4", 30.0)
+        
+        # Clipe A
+        clip_a_id = str(uuid.uuid4())
+        file_a = temp_dir / f"clip_{clip_a_id}.mp4"
+        thumb_a = temp_dir / f"thumb_{clip_a_id}.jpg"
+        file_a.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00")
+        thumb_a.write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01")
+        await save_single_clip(project_id, {
+            "id": clip_a_id,
+            "renderedUrl": f"clip_{clip_a_id}.mp4",
+            "title": "Clipe A",
+            "startTime": 0.0,
+            "endTime": 10.0,
+            "durationSec": 10.0,
+            "viralScore": 85,
+            "aspectRatio": "9:16",
+            "hookReason": "Hook A",
+            "words": [],
+            "thumbnail_key": f"thumb_{clip_a_id}.jpg"
+        })
+
+        # Clipe B
+        clip_b_id = str(uuid.uuid4())
+        file_b = temp_dir / f"clip_{clip_b_id}.mp4"
+        file_b.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00")
+        await save_single_clip(project_id, {
+            "id": clip_b_id,
+            "renderedUrl": f"clip_{clip_b_id}.mp4",
+            "title": "Clipe B",
+            "startTime": 0.0,
+            "endTime": 10.0,
+            "durationSec": 10.0,
+            "viralScore": 80,
+            "aspectRatio": "9:16",
+            "hookReason": "Hook B",
+            "words": []
+        })
+
+        try:
+            # 0. Endpoint autenticado para gerar signed URL
+            gen_resp = await ac.post(f"/api/videos/{clip_a_id}/signed-url", headers=headers)
+            assert gen_resp.status_code == 200
+            sig_data = gen_resp.json()
+            assert "sig" in sig_data
+            sig = sig_data["sig"]
+
+            # 1. Assinatura válida: download e thumbnail retornam 200 sem Authorization header
+            res_dl = await ac.get(f"/api/videos/download/{clip_a_id}?sig={sig}")
+            assert res_dl.status_code == 200
+            assert len(res_dl.content) > 0
+
+            res_thumb = await ac.get(f"/api/videos/thumbnail/{clip_a_id}?sig={sig}")
+            assert res_thumb.status_code == 200
+
+            # 2. Assinatura expirada (expires_in_sec negativo)
+            expired_sig = create_signed_url_token(user_id, clip_a_id, expires_in_sec=-10)
+            res_exp = await ac.get(f"/api/videos/download/{clip_a_id}?sig={expired_sig}")
+            assert res_exp.status_code == 403
+            assert "expirada" in res_exp.json()["detail"]
+
+            # 3. Assinatura adulterada
+            tampered_sig = sig[:-4] + ("aaaa" if not sig.endswith("aaaa") else "bbbb")
+            res_tamp = await ac.get(f"/api/videos/download/{clip_a_id}?sig={tampered_sig}")
+            assert res_tamp.status_code == 403
+
+            # 4. Assinatura usada em outro clipe (sig de clipe A usada para clipe B)
+            res_cross = await ac.get(f"/api/videos/download/{clip_b_id}?sig={sig}")
+            assert res_cross.status_code == 403
+
+            # 5. Token JWT na query não é mais aceito em deps.py (retorna 401)
+            res_jwt_query = await ac.get(f"/api/videos/download/{clip_a_id}?token={jwt_token}")
+            assert res_jwt_query.status_code == 401
+
+            # 6. Status do projeto inclui URLs assinadas
+            status_resp = await ac.get(f"/api/projects/{project_id}/status", headers=headers)
+            assert status_resp.status_code == 200
+            clips = status_resp.json()["clips"]
+            assert len(clips) >= 2
+            clip_a_item = next(c for c in clips if c["clipId"] == clip_a_id)
+            assert "videoUrl" in clip_a_item
+            assert "?sig=" in clip_a_item["videoUrl"]
+            assert "?sig=" in clip_a_item["thumbnailUrl"]
+        finally:
+            for f in (file_a, thumb_a, file_b):
+                if f.exists():
+                    f.unlink()
+
 
 
 @pytest.mark.asyncio

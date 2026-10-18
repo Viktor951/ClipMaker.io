@@ -7,11 +7,13 @@ import asyncio
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request
+from typing import Optional
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request, Query
 from fastapi.responses import FileResponse, Response
 
-from backend.app.api.deps import limiter, get_current_user
+from backend.app.api.deps import limiter, get_current_user, get_current_user_optional
 from backend.app.core.config import settings
+from backend.app.core.security import create_signed_url_token, verify_signed_url_token
 from backend.app.db.db_service import create_project, get_clip_with_owner, count_active_projects_by_user
 from backend.app.services.video_service import get_video_info
 from backend.app.worker.worker import process_video_task, download_and_process_url_task
@@ -27,35 +29,60 @@ MAX_DURATION_SEC = settings.MAX_DURATION_SEC
 
 
 def _is_safe_public_url(url: str) -> bool:
-    """Proteção contra SSRF: bloqueia URLs internas, IPs privados e esquemas inválidos."""
+    """
+    Proteção robusta contra SSRF:
+    - Rejeita URLs vazias, iniciadas por '-' ou com esquemas diferentes de http/https.
+    - Bloqueia hostnames internos conhecidos e loopback.
+    - Resolve o hostname via socket.getaddrinfo (IPv4 e IPv6).
+    - Valida que TODOS os endereços IP resolvidos sejam estritamente globais/públicos (ip.is_global).
+    - Falha fechada (rejeita / retorna False) se a resolução de DNS falhar ou levantar qualquer exceção.
+    """
     if not url or url.startswith("-"):
         return False
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
     if parsed.scheme not in ("http", "https"):
         return False
+
     hostname = parsed.hostname
     if not hostname:
         return False
 
-    # Bloqueia nomes internos do Docker e localhost
-    blocked_hosts = {"localhost", "127.0.0.1", "db", "redis", "api", "worker", "proxy", "cleanup"}
-    if hostname.lower() in blocked_hosts:
+    raw_host = hostname.strip("[]").strip()
+    if not raw_host:
         return False
 
-    try:
-        ip = ipaddress.ip_address(hostname)
-        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-            return False
-    except ValueError:
-        try:
-            resolved_ip = socket.gethostbyname(hostname)
-            ip = ipaddress.ip_address(resolved_ip)
-            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-                return False
-        except Exception:
-            pass
+    blocked_hosts = {"localhost", "127.0.0.1", "db", "redis", "api", "worker", "proxy", "cleanup"}
+    if raw_host.lower() in blocked_hosts:
+        return False
 
-    return True
+    # Se for um IP literal direto
+    try:
+        ip = ipaddress.ip_address(raw_host)
+        return ip.is_global
+    except ValueError:
+        pass
+
+    # Resolução de DNS completa (IPv4 e IPv6)
+    try:
+        addr_infos = socket.getaddrinfo(raw_host, None)
+        if not addr_infos:
+            return False
+
+        for addr in addr_infos:
+            sockaddr = addr[4]
+            ip_str = sockaddr[0]
+            ip = ipaddress.ip_address(ip_str)
+            if not ip.is_global:
+                return False
+
+        return True
+    except Exception:
+        # Falha fechado caso o DNS não resolva (gaierror, timeout, etc.)
+        return False
 
 
 def _save_upload_file_sync(file_obj, destination_path: Path, max_size: int) -> int:
@@ -188,11 +215,45 @@ async def process_url(
     return {"status": "processing", "project_id": project_id, "initial_status": "DOWNLOADING"}
 
 
+@router.post("/signed-url/{clip_id}")
+@router.post("/{clip_id}/signed-url")
+async def generate_signed_url_endpoint(
+    clip_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    safe_id = os.path.basename(clip_id)
+    real_id = safe_id
+    if real_id.startswith("clip_"):
+        real_id = real_id[5:]
+    if real_id.startswith("clean_"):
+        real_id = real_id[6:]
+    if real_id.endswith(".mp4"):
+        real_id = real_id[:-4]
+
+    clip_record = await get_clip_with_owner(real_id)
+    if not clip_record:
+        raise HTTPException(status_code=404, detail="Registro do clipe não encontrado.")
+
+    if str(clip_record["userId"]) != str(current_user["id"]):
+        raise HTTPException(status_code=403, detail="Acesso negado.")
+
+    sig = create_signed_url_token(str(current_user["id"]), real_id, expires_in_sec=300)
+    return {
+        "status": "success",
+        "clip_id": real_id,
+        "sig": sig,
+        "download_url": f"/api/videos/download/{real_id}?sig={sig}",
+        "thumbnail_url": f"/api/videos/thumbnail/{real_id}?sig={sig}",
+        "expires_in": 300
+    }
+
+
 @router.get("/download/{clip_id}")
 async def download_clip(
     clip_id: str,
     request: Request,
-    current_user: dict = Depends(get_current_user)
+    sig: Optional[str] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     safe_id = os.path.basename(clip_id)
 
@@ -204,12 +265,23 @@ async def download_clip(
     if real_id.endswith(".mp4"):
         real_id = real_id[:-4]
 
+    user_id = None
+    if sig:
+        sig_data = verify_signed_url_token(sig, expected_clip_id=real_id)
+        if not sig_data:
+            raise HTTPException(status_code=403, detail="Assinatura inválida ou expirada.")
+        user_id = sig_data["user_id"]
+    elif current_user:
+        user_id = str(current_user["id"])
+    else:
+        raise HTTPException(status_code=401, detail="Não autenticado.")
+
     # Consulta otimizada com JOIN único: traz clipe e userId do dono sem carregar todos os clipes nem fazer parse JSON
     clip_record = await get_clip_with_owner(real_id)
     if not clip_record:
         raise HTTPException(status_code=404, detail="Registro do clipe não encontrado.")
 
-    if str(clip_record["userId"]) != str(current_user["id"]):
+    if str(clip_record["userId"]) != user_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
     # Nome do arquivo derivado estritamente do banco de dados (renderedUrl)
@@ -228,11 +300,9 @@ async def download_clip(
         raise HTTPException(status_code=404, detail="Arquivo de vídeo não encontrado.")
 
     # Suporte a entrega acelerada de vídeo pelo Nginx via X-Accel-Redirect
-    accel_configured = os.getenv("USE_NGINX_ACCEL", "false").lower() in ("true", "1")
-    has_proxy_headers = bool(request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP"))
-    is_test_accel = request.headers.get("X-Request-Accel") == "1"
+    use_accel = os.getenv("USE_NGINX_ACCEL", "false").lower() in ("true", "1")
 
-    if (accel_configured or has_proxy_headers or is_test_accel) and not request.headers.get("X-Disable-Accel"):
+    if use_accel:
         response = Response(status_code=200)
         response.headers["X-Accel-Redirect"] = f"/internal_videos/{filename}"
         response.headers["Content-Type"] = "video/mp4"
@@ -252,7 +322,8 @@ async def download_clip(
 async def get_thumbnail(
     clip_id: str,
     request: Request,
-    current_user: dict = Depends(get_current_user)
+    sig: Optional[str] = Query(None),
+    current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     safe_id = os.path.basename(clip_id)
 
@@ -262,11 +333,22 @@ async def get_thumbnail(
     if real_id.endswith(".mp4") or real_id.endswith(".jpg"):
         real_id = real_id[:real_id.rfind(".")]
 
+    user_id = None
+    if sig:
+        sig_data = verify_signed_url_token(sig, expected_clip_id=real_id)
+        if not sig_data:
+            raise HTTPException(status_code=403, detail="Assinatura inválida ou expirada.")
+        user_id = sig_data["user_id"]
+    elif current_user:
+        user_id = str(current_user["id"])
+    else:
+        raise HTTPException(status_code=401, detail="Não autenticado.")
+
     clip_record = await get_clip_with_owner(real_id)
     if not clip_record:
         raise HTTPException(status_code=404, detail="Registro do clipe não encontrado.")
 
-    if str(clip_record["userId"]) != str(current_user["id"]):
+    if str(clip_record["userId"]) != user_id:
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
     thumb_key = clip_record.get("thumbnail_key") or f"thumb_{real_id}.jpg"

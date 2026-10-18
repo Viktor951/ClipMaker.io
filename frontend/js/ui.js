@@ -10,19 +10,27 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-function getClipVideoUrl(clipId, extraParam = '') {
+async function fetchSignedUrl(clipId) {
     const token = localStorage.getItem('clipmaker_token') || '';
+    const res = await fetch(`/api/videos/${encodeURIComponent(clipId)}/signed-url`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`
+        }
+    });
+    if (!res.ok) throw new Error('Falha ao obter URL assinada.');
+    return await res.json();
+}
+
+function getClipVideoUrl(clipId, extraParam = '') {
     const parts = [];
-    if (token) parts.push(`token=${encodeURIComponent(token)}`);
     if (extraParam) parts.push(extraParam);
     const qs = parts.length ? `?${parts.join('&')}` : '';
     return `/api/videos/download/${encodeURIComponent(clipId)}${qs}`;
 }
 
 function getClipThumbnailUrl(clipId) {
-    const token = localStorage.getItem('clipmaker_token') || '';
-    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
-    return `/api/videos/thumbnail/${encodeURIComponent(clipId)}${qs}`;
+    return `/api/videos/thumbnail/${encodeURIComponent(clipId)}`;
 }
 
 const UI = {
@@ -63,8 +71,8 @@ const UI = {
             const titleSafe = escapeHtml(clip.title || 'Corte Viral (IA)');
             const hookSafe = escapeHtml(clip.hookReason || '');
             
-            const videoUrl = getClipVideoUrl(clipIdentifier);
-            const thumbnailUrl = getClipThumbnailUrl(clipIdentifier);
+            const videoUrl = clip.videoUrl || getClipVideoUrl(clipIdentifier);
+            const thumbnailUrl = clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier);
             // Item 4: poster com miniatura real e preload="none"
             const mediaContent = `<video src="${videoUrl}" poster="${thumbnailUrl}" preload="none" controls class="clip-card-video"></video>`;
 
@@ -106,9 +114,18 @@ const UI = {
 
             const downloadBtn = card.querySelector('.btn-download');
             if (downloadBtn) {
-                downloadBtn.addEventListener('click', (e) => {
+                downloadBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    window.location.href = getClipVideoUrl(clipIdentifier);
+                    try {
+                        const data = await fetchSignedUrl(clipIdentifier);
+                        window.location.href = data.download_url;
+                    } catch (err) {
+                        if (clip.videoUrl) {
+                            window.location.href = clip.videoUrl;
+                        } else {
+                            window.location.href = getClipVideoUrl(clipIdentifier);
+                        }
+                    }
                 });
             }
         });
@@ -154,14 +171,22 @@ const UI = {
         }
 
         // Reconstruir o video preview real
-        const videoUrl = getClipVideoUrl(clipIdentifier);
-        const thumbnailUrl = getClipThumbnailUrl(clipIdentifier);
+        const videoUrl = clip.videoUrl || getClipVideoUrl(clipIdentifier);
+        const thumbnailUrl = clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier);
         videoContainer.innerHTML = `
             <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
                 <video id="editor-video-player" src="${videoUrl}" poster="${thumbnailUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
             </div>
         `;
         updatePlayerAspect(currentRatio);
+
+        // Atualiza para URL assinada recente se necessário
+        if (!clip.videoUrl) {
+            fetchSignedUrl(clipIdentifier).then(data => {
+                const player = document.getElementById('editor-video-player');
+                if (player) player.src = data.download_url;
+            }).catch(() => {});
+        }
 
         transcriptContainer.innerHTML = '';
 
@@ -294,7 +319,12 @@ const UI = {
                         throw new Error('Tempo limite de renderização atingido. Tente novamente mais tarde.');
                     }
                     
-                    const refreshedUrl = getClipVideoUrl(clipIdentifier, `t=${Date.now()}`);
+                    let refreshedUrl = getClipVideoUrl(clipIdentifier, `t=${Date.now()}`);
+                    try {
+                        const signedData = await fetchSignedUrl(clipIdentifier);
+                        refreshedUrl = signedData.download_url;
+                    } catch (e) {}
+
                     // Baixar automaticamente apenas após conclusão confirmada
                     window.location.href = refreshedUrl;
                     

@@ -30,13 +30,11 @@ limiter = Limiter(
 )
 
 async def get_current_user(
-    header_token: Optional[str] = Depends(oauth2_scheme),
-    query_token: Optional[str] = Query(None, alias="token")
+    header_token: Optional[str] = Depends(oauth2_scheme)
 ):
-    token = header_token or query_token
-    if not token:
+    if not header_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    payload = decode_access_token(token)
+    payload = decode_access_token(header_token)
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid token")
     email = payload.get("sub")
@@ -44,3 +42,15 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+async def get_current_user_optional(
+    header_token: Optional[str] = Depends(oauth2_scheme)
+) -> Optional[dict]:
+    if not header_token:
+        return None
+    payload = decode_access_token(header_token)
+    if not payload:
+        return None
+    email = payload.get("sub")
+    return await get_user_by_email(email)
+

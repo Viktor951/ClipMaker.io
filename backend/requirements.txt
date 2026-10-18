@@ -1,15 +1,15 @@
 # === Framework Web ===
-fastapi==0.104.0
-uvicorn==0.24.0
-python-multipart==0.0.6
-pydantic==2.4.2
-pydantic-settings==2.0.3
-email-validator==2.1.0.post1
+fastapi==0.115.11
+uvicorn==0.34.0
+python-multipart==0.0.32
+pydantic==2.10.6
+pydantic-settings==2.8.0
+email-validator==2.2.0
 
 # === Processamento de Vídeo ===
 ffmpeg-python==0.2.0
-opencv-python-headless==4.8.0.76
-numpy==1.24.0
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
 yt-dlp>=2024.11.18
 
 # === IA / Transcrição ===
@@ -21,13 +21,15 @@ huey==2.5.0
 
 # === Autenticação ===
 passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.3.0
+PyJWT==2.15.1
 bcrypt==3.2.2
 
 # === Configuração ===
-python-dotenv==1.0.0
+python-dotenv==1.2.2
+
 
 # === Banco e Rate Limiting ===
 asyncpg==0.29.0
 redis==5.0.0
 slowapi==0.1.8
+

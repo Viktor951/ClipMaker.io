@@ -1,5 +1,10 @@
+import hmac
+import hashlib
+import time
+import base64
 from datetime import datetime, timedelta, timezone
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from backend.app.core.config import settings
 
@@ -23,11 +28,59 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
         expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    if isinstance(encoded_jwt, bytes):
+        encoded_jwt = encoded_jwt.decode("utf-8")
     return encoded_jwt
 
 def decode_access_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except JWTError:
+    except PyJWTError:
         return None
+
+def create_signed_url_token(user_id: str, clip_id: str, expires_in_sec: int = 300) -> str:
+    """
+    Gera uma assinatura HMAC-SHA256 de curta duração (padrão 5 minutos) vinculada a clip_id e user_id.
+    Formato: base64url(user_id:clip_id:expires_ts:signature_hex)
+    """
+    expires_at = int(time.time()) + expires_in_sec
+    message = f"{user_id}:{clip_id}:{expires_at}"
+    sig = hmac.new(SECRET_KEY.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+    raw = f"{user_id}:{clip_id}:{expires_at}:{sig}"
+    return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("utf-8").rstrip("=")
+
+def verify_signed_url_token(token: str, expected_clip_id: str) -> dict | None:
+    """
+    Valida a assinatura HMAC, expiração (<= 5 min) e vínculo com o clipe.
+    Retorna o dicionário com user_id e clip_id se válido, ou None se inválido/expirado/adulterado.
+    """
+    if not token:
+        return None
+    try:
+        padding = "=" * (-len(token) % 4)
+        raw = base64.urlsafe_b64decode(token + padding).decode("utf-8")
+        parts = raw.split(":")
+        if len(parts) != 4:
+            return None
+        user_id, clip_id, expires_str, sig = parts
+
+        # 1. Verifica vínculo do clipe
+        if clip_id != expected_clip_id:
+            return None
+
+        # 2. Verifica assinatura HMAC em tempo constante
+        message = f"{user_id}:{clip_id}:{expires_str}"
+        expected_sig = hmac.new(SECRET_KEY.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+
+        # 3. Verifica expiração temporal
+        expires_at = int(expires_str)
+        if time.time() > expires_at:
+            return None
+
+        return {"user_id": user_id, "clip_id": clip_id, "expires_at": expires_at}
+    except Exception:
+        return None
+

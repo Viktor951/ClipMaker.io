@@ -46,8 +46,12 @@ if _use_redis:
     huey_render = huey
     logger.info("Fila Huey unificada (clipmaker_tasks) inicializada com Redis com sucesso.")
 else:
+    import tempfile
     queue_dir = Path(__file__).resolve().parent.parent.parent.parent
-    huey = SqliteHuey('clipmaker_tasks', filename=str(queue_dir / "huey_queue.db"))
+    db_path = queue_dir / "huey_queue.db"
+    if not os.access(queue_dir, os.W_OK):
+        db_path = Path(tempfile.gettempdir()) / "huey_queue.db"
+    huey = SqliteHuey('clipmaker_tasks', filename=str(db_path))
     huey_ingest = huey
     huey_render = huey
     logger.warning("[AVISO] Fila Huey unificada inicializada com SqliteHuey local.")
@@ -146,6 +150,11 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
     max_duration_sec = settings.MAX_DURATION_SEC
 
     try:
+        # Validação Anti-SSRF antes do yt-dlp para mitigar risco de DNS rebinding
+        from backend.app.api.routers.video import _is_safe_public_url
+        if not _is_safe_public_url(url):
+            raise ValueError("URL não permitida ou insegura.")
+
         run_sync(update_project_status(project_id, "DOWNLOADING"))
 
         # 1. Probe prévio com timeout controlado

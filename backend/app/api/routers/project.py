@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.api.deps import get_current_user, limiter
+from backend.app.core.security import create_signed_url_token
 from backend.app.db.db_service import (
     get_project_with_clips,
     get_clip,
@@ -81,11 +82,14 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
 
     clips_list = []
     for c in project.get("clips", []):
+        clip_id_str = str(c.get("id"))
+        sig = create_signed_url_token(str(current_user["id"]), clip_id_str, expires_in_sec=300)
         thumb_key = c.get("thumbnail_key") or c.get("thumbnailkey") or ""
-        thumb_url = f"/api/videos/thumbnail/{c.get('id')}" if thumb_key else ""
+        thumb_url = f"/api/videos/thumbnail/{clip_id_str}?sig={sig}" if thumb_key else ""
+        video_url = f"/api/videos/download/{clip_id_str}?sig={sig}"
         clips_list.append({
             "id": c.get("renderedurl"),
-            "clipId": str(c.get("id")),
+            "clipId": clip_id_str,
             "title": c.get("title"),
             "duration": f"{c.get('durationsec')}s",
             "durationSec": c.get("durationsec"),
@@ -95,6 +99,8 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
             "viralScore": c.get("viralscore"),
             "hookReason": c.get("hookreason"),
             "thumbnail": thumb_url,
+            "thumbnailUrl": thumb_url,
+            "videoUrl": video_url,
             "thumbnailKey": thumb_key,
             "status": c.get("status", "COMPLETED"),
             "words": c.get("words", []),

@@ -23,6 +23,7 @@ x-app-env: &app-env
   ALLOWED_ORIGINS: http://${DOMAIN:-localhost},https://${DOMAIN:-localhost},http://localhost,http://127.0.0.1
   LOG_FORMAT: json
   MAX_SOURCE_HEIGHT: ${MAX_SOURCE_HEIGHT:-1080}
+  USE_NGINX_ACCEL: "true"
 
 x-app-volumes: &app-volumes
   - clipmaker_temp_videos:/app/backend/temp_videos
