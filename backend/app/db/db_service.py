@@ -227,6 +227,14 @@ class SqliteBackend:
             await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_job_metrics_created_at ON job_metrics (createdAt DESC);")
         except Exception:
             pass
+        try:
+            await self._conn.execute("ALTER TABLE projects ADD COLUMN updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_status_updated ON projects (status, updatedAt);")
+        except Exception:
+            pass
         await self._conn.commit()
 
     async def close(self):
@@ -370,12 +378,12 @@ async def update_project_source(project_id: str, source_file_key: str, duration_
     db = await get_backend()
     if title:
         await db.execute(
-            "UPDATE projects SET sourceFileKey = $1, durationSec = $2, title = $3 WHERE id = $4",
+            "UPDATE projects SET sourceFileKey = $1, durationSec = $2, title = $3, updatedAt = CURRENT_TIMESTAMP WHERE id = $4",
             source_file_key, duration_sec, title, project_id
         )
     else:
         await db.execute(
-            "UPDATE projects SET sourceFileKey = $1, durationSec = $2 WHERE id = $3",
+            "UPDATE projects SET sourceFileKey = $1, durationSec = $2, updatedAt = CURRENT_TIMESTAMP WHERE id = $3",
             source_file_key, duration_sec, project_id
         )
 
@@ -396,7 +404,7 @@ async def update_project_status(project_id: str, status: str, error_message: str
         return
     db = await get_backend()
     await db.execute(
-        "UPDATE projects SET status = $1, errorMessage = $2 WHERE id = $3",
+        "UPDATE projects SET status = $1, errorMessage = $2, updatedAt = CURRENT_TIMESTAMP WHERE id = $3",
         status, error_message, project_id
     )
 
@@ -566,7 +574,7 @@ async def save_project_results(project_id: str, clips_data: List[Dict[str, Any]]
                 start_t, end_t, dur_s,
                 clip['viralScore'], clip.get('aspectRatio', '9:16'), clip['renderedUrl'], 'COMPLETED', 'Yellow', words_json, thumb_key, face_cx
             )
-        await tx.execute("UPDATE projects SET status = 'READY' WHERE id = $1", project_id)
+        await tx.execute("UPDATE projects SET status = 'READY', updatedAt = CURRENT_TIMESTAMP WHERE id = $1", project_id)
 
 
 async def get_clip(clip_id: str) -> Optional[Dict[str, Any]]:
@@ -719,4 +727,58 @@ async def record_job_metric(project_id: str, duration_sec: float, total_elapsed_
            VALUES ($1, $2, $3, $4, $5)""",
         mid, project_id, duration_sec, total_elapsed_sec, sec_per_min
     )
+
+
+async def fail_stale_projects(stale_minutes: int = 60) -> int:
+    """
+    Watchdog: varre projetos com status ativos (DOWNLOADING, TRANSCRIBING, ANALYZING, RENDERING)
+    cujo updatedAt esteja estagnado há mais de stale_minutes e marca como FAILED com mensagem amigável.
+    Retorna a quantidade de projetos atualizados.
+    """
+    db = await get_backend()
+    friendly_msg = "O processamento excedeu o tempo limite. Tente novamente."
+    
+    rows = await db.fetch(
+        """SELECT id, status, updatedAt, createdAt FROM projects 
+           WHERE status IN ('DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')"""
+    )
+    if not rows:
+        return 0
+
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=stale_minutes)
+    stale_ids = []
+
+    for r in rows:
+        raw_dt = r.get("updatedat") or r.get("createdat")
+        if not raw_dt:
+            continue
+        if isinstance(raw_dt, str):
+            clean_str = raw_dt.replace("T", " ").split("+")[0].split("Z")[0].strip()
+            try:
+                if "." in clean_str:
+                    parsed_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S.%f")
+                else:
+                    parsed_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+                parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                parsed_dt = now
+        elif isinstance(raw_dt, datetime):
+            parsed_dt = raw_dt if raw_dt.tzinfo else raw_dt.replace(tzinfo=timezone.utc)
+        else:
+            parsed_dt = now
+
+        if parsed_dt < cutoff:
+            stale_ids.append(str(r["id"]))
+
+    for pid in stale_ids:
+        await db.execute(
+            "UPDATE projects SET status = 'FAILED', errorMessage = $1, updatedAt = CURRENT_TIMESTAMP WHERE id = $2",
+            friendly_msg, pid
+        )
+        logger.warning(f"[WATCHDOG] Projeto {pid} marcado como FAILED (inativo há mais de {stale_minutes} min).")
+
+    return len(stale_ids)
+
 

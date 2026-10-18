@@ -22,7 +22,19 @@ def cleanup_old_files():
                         print(f"[CLEANUP] Erro ao remover {filename}: {e}")
 
 
-    print("[CLEANUP] Rotina de limpeza concluída.")
+def check_stale_projects_watchdog():
+    """Varredura complementar de projetos travados caso cleanup tenha acesso ao banco."""
+    try:
+        from backend.app.core.loop import run_sync
+        from backend.app.db.db_service import fail_stale_projects
+        stale_min = int(os.getenv("PROJECT_STALE_MINUTES", "60"))
+        count = run_sync(fail_stale_projects(stale_minutes=stale_min))
+        if count > 0:
+            print(f"[CLEANUP/WATCHDOG] {count} projeto(s) travado(s) marcado(s) como FAILED.")
+    except Exception as e:
+        print(f"[CLEANUP/WATCHDOG] Verificação ignorada ou indisponível: {e}")
+
 
 if __name__ == "__main__":
     cleanup_old_files()
+    check_stale_projects_watchdog()

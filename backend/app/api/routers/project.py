@@ -63,9 +63,11 @@ async def create_new_project(payload: ProjectCreate = ProjectCreate(), current_u
         title=payload.title,
         source_file_key=safe_key,
         duration_sec=payload.duration_sec,
-        source_url=payload.source_url
+        source_url=payload.source_url,
+        status="DRAFT"
     )
-    return {"status": "success", "project_id": project_id}
+    return {"status": "success", "project_id": project_id, "status_name": "DRAFT"}
+
 
 
 @router.get("/{project_id}/status")

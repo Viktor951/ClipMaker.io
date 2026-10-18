@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     RENDER_PARALLELISM: int = int(os.getenv("RENDER_PARALLELISM", "0"))
     GEMINI_MODELS: str = os.getenv("GEMINI_MODELS", "gemini-3.8-flash,gemini-flash-latest,gemini-pro-latest")
     MAX_CONCURRENT_JOBS_PER_USER: int = int(os.getenv("MAX_CONCURRENT_JOBS_PER_USER", "2"))
+    PROJECT_STALE_MINUTES: int = int(os.getenv("PROJECT_STALE_MINUTES", "60"))
+    JOB_TIMEOUT_MINUTES: int = int(os.getenv("JOB_TIMEOUT_MINUTES", "90"))
     
     model_config = {
         "env_file": ".env",

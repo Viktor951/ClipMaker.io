@@ -198,6 +198,30 @@ def get_last_llm_meta() -> dict:
     """Retorna os metadados da última execução do LLM para auditoria e benchmark."""
     return dict(_LAST_LLM_META)
 
+def _get_clip_target_and_durations(duration: float):
+    """
+    Calcula dinamicamente a quantidade de clipes e durações mínima/máxima coerentes com o vídeo.
+    Evita que o LLM entre em loops de raciocínio com restrições contraditórias (ex: 5 clipes de 60s em vídeo de 20s).
+    """
+    if duration <= 30.0:
+        target_count = 1
+        min_dur = min(5.0, duration * 0.4)
+        max_dur = duration
+    elif duration <= 60.0:
+        target_count = 2
+        min_dur = 10.0
+        max_dur = duration
+    elif duration <= 120.0:
+        target_count = 3
+        min_dur = 20.0
+        max_dur = min(60.0, duration)
+    else:
+        target_count = TARGET_CLIPS_COUNT
+        min_dur = MIN_DURATION_SEC
+        max_dur = MAX_DURATION_SEC
+    return target_count, min_dur, max_dur
+
+
 def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
     """Envia o transcript para o Gemini e retorna a lista de clipes estruturada."""
     global _LAST_LLM_META
@@ -220,24 +244,26 @@ def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
     import google.generativeai as genai
     genai.configure(api_key=api_key)
     
+    target_count, min_dur, max_dur = _get_clip_target_and_durations(duration)
+
     prompt = f"""Você é um Produtor Sênior de Vídeos Virais para TikTok, Reels e Shorts (como o OpusClip).
-Sua missão é analisar a transcrição de um vídeo e extrair EXATAMENTE {TARGET_CLIPS_COUNT} clipes ALTAMENTE VIRAIS.
+Sua missão é analisar a transcrição de um vídeo de {duration:.1f} segundos e extrair EXATAMENTE {target_count} clipe(s) ALTAMENTE VIRAIS.
 
 REGRAS RÍGIDAS:
-1. Você deve retornar ESTRITAMENTE entre 4 e 6 cortes.
-2. A duração matemática (end_time - start_time) de CADA clipe deve ser de no mínimo {MIN_DURATION_SEC} segundos e no máximo {MAX_DURATION_SEC} segundos. 
-3. Priorize frases completas e raciocínios que façam sentido isoladamente (começo, meio e fim).
-4. O 'start_time' deve iniciar imediatamente onde uma fala forte começa.
-5. O 'end_time' deve ser após a conclusão do raciocínio.
-6. Selecione ganchos incrivelmente chamativos para a primeira frase ('hook_text').
-7. Retorne puramente um array de objetos JSON, sem formatação Markdown (nada de ```json).
-8. Se o vídeo inteiro for muito curto, retorne o que for possível dentro das regras.
+1. Você deve retornar ESTRITAMENTE {target_count} corte(s).
+2. A duração matemática (end_time - start_time) de CADA clipe deve ser de no mínimo {min_dur:.1f} segundos e no máximo {max_dur:.1f} segundos. 
+3. Não crie clipes que ultrapassem {duration:.1f} segundos e garanta início e fim dentro dos limites do vídeo.
+4. Priorize frases completas e raciocínios que façam sentido isoladamente (começo, meio e fim).
+5. O 'start_time' deve iniciar imediatamente onde uma fala forte começa.
+6. O 'end_time' deve ser após a conclusão do raciocínio.
+7. Selecione ganchos incrivelmente chamativos para a primeira frase ('hook_text').
+8. Retorne puramente um array de objetos JSON, sem formatação Markdown (nada de ```json).
 
 O esquema JSON OBRIGATÓRIO por item:
 {{
   "title": "Um título muito chamativo e polêmico",
-  "start_time": 12.5,
-  "end_time": 85.0,
+  "start_time": 0.0,
+  "end_time": {max_dur:.1f},
   "viral_score": 95,
   "hook_text": "A primeira frase forte do clipe"
 }}
@@ -270,11 +296,18 @@ TRANSCRIÇÃO DO VÍDEO:
                 logger.debug(f"Resposta do Gemini ({model_name}): {raw_json[:300]}...")
                 
                 clips = json.loads(raw_json)
+                if not isinstance(clips, list) or len(clips) == 0:
+                    logger.warning(f"Resposta vazia ou inválida do Gemini ({model_name}).")
+                    break
                 
                 clip_boundaries = []
                 for c in clips:
-                    st = float(c.get("start_time", 0.0))
-                    en = float(c.get("end_time", duration))
+                    st = max(0.0, float(c.get("start_time", 0.0)))
+                    en = min(duration, float(c.get("end_time", duration)))
+                    if en <= st:
+                        en = min(duration, st + min_dur)
+                    if en <= st:
+                        continue
                     ti = c.get("title", "Clipe Viral")
                     ho = c.get("hook_text", "")
                     try:
@@ -283,13 +316,17 @@ TRANSCRIÇÃO DO VÍDEO:
                         vs = 85
                     vs = max(0, min(100, vs))
                     clip_boundaries.append({
-                        "start": st,
-                        "end": en,
+                        "start": round(st, 2),
+                        "end": round(en, 2),
                         "title": ti,
                         "hook": ho,
                         "viral_score": vs
                     })
-                    
+                
+                if len(clip_boundaries) == 0:
+                    logger.warning("Nenhum corte válido após sanitização dos dados do Gemini.")
+                    break
+
                 _LAST_LLM_META = {
                     "model": model_name,
                     "attempts": total_attempts,
@@ -308,7 +345,6 @@ TRANSCRIÇÃO DO VÍDEO:
                 if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
                     had_429 = True
                     logger.warning(f"LLM 429 Quota Exceeded com modelo '{model_name}'.")
-                    # Analisar retry-delay fornecido na resposta da API
                     delay_match = re.search(r"retry.*?(\d+(?:\.\d+)?)\s*s", err_str, re.IGNORECASE)
                     retry_delay = float(delay_match.group(1)) if delay_match else 0.0
                     if 0.0 < retry_delay < 10.0:
@@ -331,7 +367,7 @@ TRANSCRIÇÃO DO VÍDEO:
                     logger.warning(f"Modelo {model_name} não disponível. Tentando próximo...")
                     break
                     
-                time.sleep(5)
+                time.sleep(3)
     
     _LAST_LLM_META = {
         "model": "nenhum (todos falharam)",
@@ -346,26 +382,43 @@ TRANSCRIÇÃO DO VÍDEO:
     )
     return _fallback_clip_boundaries(duration)
 
+
 def _fallback_clip_boundaries(duration: float) -> list:
     """Fallback matemático caso a API do Gemini falhe."""
     logger.warning("Usando fallback matemático para gerar cortes.")
     clip_boundaries = []
-    clip_duration = 75.0
-    if duration <= clip_duration:
+    if duration <= 45.0:
         clip_boundaries.append({
             "start": 0.0,
             "end": duration,
-            "title": "Clipe Completo",
+            "title": "Destaque Principal",
+            "hook": "Melhor momento do vídeo",
+            "viral_score": 90
+        })
+    elif duration <= 90.0:
+        half = round(duration / 2.0, 1)
+        clip_boundaries.append({
+            "start": 0.0,
+            "end": half,
+            "title": "Parte 1 - Momento Viral",
             "hook": "Gancho inicial",
-            "viral_score": 85
+            "viral_score": 92
+        })
+        clip_boundaries.append({
+            "start": half,
+            "end": duration,
+            "title": "Parte 2 - Conclusão",
+            "hook": "Desfecho impactante",
+            "viral_score": 88
         })
     else:
-        num_clips = min(int(duration // clip_duration) or 1, 6)
+        clip_duration = min(75.0, duration / 3.0)
+        num_clips = min(int(duration // clip_duration) or 1, 5)
         step = (duration - clip_duration) / max(1, num_clips - 1) if num_clips > 1 else 0
         for i in range(num_clips):
-            start = i * step
-            end = min(start + clip_duration, duration)
-            score = max(50, 95 - i * 8)
+            start = round(i * step, 1)
+            end = min(round(start + clip_duration, 1), duration)
+            score = max(50, 95 - i * 5)
             clip_boundaries.append({
                 "start": start,
                 "end": end,
@@ -374,3 +427,4 @@ def _fallback_clip_boundaries(duration: float) -> list:
                 "viral_score": score
             })
     return clip_boundaries
+

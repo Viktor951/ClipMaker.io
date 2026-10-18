@@ -1,4 +1,4 @@
-from huey import RedisHuey, SqliteHuey
+from huey import RedisHuey, SqliteHuey, crontab
 import os
 import sys
 import gc
@@ -65,6 +65,63 @@ def _cleanup_runtime():
         pass
 
 
+def categorize_error(e: Exception) -> str:
+    """
+    Gera uma mensagem de erro curta e genérica por categoria para gravação no banco de dados.
+    O erro técnico completo deve ser registrado exclusivamente nos logs da aplicação via logger.exception.
+    """
+    err_str = str(e).lower()
+    if isinstance(e, TimeoutError) or "tempo limite" in err_str or "timeout" in err_str:
+        return "O processamento excedeu o tempo limite. Tente novamente."
+    if "download" in err_str or "yt-dlp" in err_str or "url" in err_str:
+        return "Falha ao baixar o vídeo. Verifique se o link é válido e público."
+    if "whisper" in err_str or "transcri" in err_str:
+        return "Falha na transcrição do áudio do vídeo."
+    if "gemini" in err_str or "llm" in err_str or "análise" in err_str or "analise" in err_str:
+        return "Falha na análise dos melhores momentos com IA."
+    if "render" in err_str or "ffmpeg" in err_str:
+        return "Falha na renderização do clipe."
+    if "duração máxima" in err_str or "limite de duração" in err_str or "excede" in err_str:
+        return "O vídeo excede os limites de duração permitidos."
+    if "arquivo" in err_str and ("vazio" in err_str or "não encontrado" in err_str or "corrompido" in err_str):
+        return "Arquivo de vídeo não encontrado ou corrompido."
+    return "Ocorreu um erro no processamento do vídeo. Tente novamente."
+
+
+def _is_network_transient_error(stderr_text: str) -> bool:
+    """Detecta se uma falha do yt-dlp foi puramente de rede (elegível para 1 retry)."""
+    err_lower = stderr_text.lower()
+    non_retryable = [
+        "private video", "video unavailable", "sign in", "removed by the uploader",
+        "copyright", "http error 404", "http error 403", "members-only",
+        "account has been terminated"
+    ]
+    if any(nr in err_lower for nr in non_retryable):
+        return False
+    network_indicators = [
+        "timed out", "timeout", "connection reset", "connection refused",
+        "network is unreachable", "temporary failure", "incompleteread",
+        "remotedisconnected", "unable to download webpage", "connection error",
+        "errno 104", "errno 110", "errno 111"
+    ]
+    return any(ni in err_lower for ni in network_indicators)
+
+
+@huey.periodic_task(crontab(minute='*/5'))
+def watchdog_stale_projects_task():
+    """Tarefa periódica do Huey que identifica e finaliza projetos travados a cada 5 minutos."""
+    from backend.app.core.loop import run_sync
+    from backend.app.db.db_service import fail_stale_projects
+    from backend.app.core.config import settings
+    stale_min = int(getattr(settings, "PROJECT_STALE_MINUTES", 60))
+    try:
+        count = run_sync(fail_stale_projects(stale_minutes=stale_min))
+        if count > 0:
+            logger.warning(f"[WATCHDOG] {count} projeto(s) travado(s) marcado(s) como FAILED por inatividade > {stale_min}min.")
+    except Exception as e:
+        logger.exception(f"[WATCHDOG] Falha ao executar varredura de projetos travados: {e}")
+
+
 @huey.task()
 def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspect_ratio: str = "9:16"):
     """
@@ -104,7 +161,7 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         if video_duration > max_duration_sec:
             raise ValueError(f"O vídeo excede o limite máximo permitido de {max_duration_sec} segundos.")
 
-        # 2. Download otimizado
+        # 2. Download otimizado com no máximo 1 retry apenas para falhas de rede transitórias
         max_height = getattr(settings, "MAX_SOURCE_HEIGHT", 1080)
         download_cmd = [
             sys.executable, "-m", "yt_dlp",
@@ -116,9 +173,36 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
             "-o", input_path,
             "--", url
         ]
-        dl_res = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
-        if dl_res.returncode != 0:
-            raise RuntimeError(f"Falha no download via yt-dlp: {dl_res.stderr[-500:]}")
+        
+        max_download_attempts = 2
+        dl_success = False
+        last_dl_err = ""
+        
+        for attempt in range(max_download_attempts):
+            try:
+                dl_res = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
+                if dl_res.returncode == 0 and os.path.exists(input_path) and os.path.getsize(input_path) > 0:
+                    dl_success = True
+                    break
+                stderr_text = dl_res.stderr or ""
+                last_dl_err = stderr_text[-500:]
+                logger.warning(f"[INGEST] Tentativa {attempt + 1} de download falhou para {project_id}: {last_dl_err}")
+                
+                if attempt == 0 and _is_network_transient_error(stderr_text):
+                    logger.info(f"[INGEST] Erro de rede detectado. Tentando novamente (máx. 1 retry)...")
+                    time.sleep(3)
+                    continue
+                else:
+                    break
+            except subprocess.TimeoutExpired:
+                last_dl_err = "Download excedeu o tempo limite de 1800s via yt-dlp"
+                if attempt == 0:
+                    logger.info(f"[INGEST] Timeout de download. Tentando novamente (máx. 1 retry)...")
+                    continue
+                break
+
+        if not dl_success:
+            raise RuntimeError(f"Falha no download via yt-dlp: {last_dl_err}")
 
         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
             raise RuntimeError("O arquivo de vídeo baixado está vazio ou não foi gravado.")
@@ -138,8 +222,9 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         logger.info(f"Sucesso! Projeto {project_id} finalizado em {elapsed:.1f}s ({len(clips)} clipes).")
 
     except Exception as e:
-        logger.error(f"Erro no processamento por URL para {project_id}: {e}", exc_info=True)
-        run_sync(update_project_status(project_id, "FAILED", str(e)))
+        logger.exception(f"Erro técnico no processamento por URL para {project_id}: {e}")
+        friendly_error = categorize_error(e)
+        run_sync(update_project_status(project_id, "FAILED", friendly_error))
         if os.path.exists(input_path):
             try: os.remove(input_path)
             except OSError: pass
@@ -174,13 +259,12 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
             pass
         
     except Exception as e:
-        logger.error(f"Erro ao processar projeto {project_id}: {e}")
-        traceback.print_exc()
-        
+        logger.exception(f"Erro técnico ao processar projeto {project_id}: {e}")
+        friendly_error = categorize_error(e)
         from backend.app.core.loop import run_sync
         from backend.app.db.db_service import update_project_status
-        run_sync(update_project_status(project_id, "FAILED", str(e)))
-        logger.info(f"Status do projeto {project_id} atualizado para FAILED")
+        run_sync(update_project_status(project_id, "FAILED", friendly_error))
+        logger.info(f"Status do projeto {project_id} atualizado para FAILED ({friendly_error})")
         
     finally:
         _cleanup_runtime()
@@ -293,8 +377,8 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
         ))
         logger.info(f"Re-render do clipe {clip_id} concluído com sucesso.")
     except Exception as e:
-        logger.error(f"Erro no re-render do clipe {clip_id}: {e}", exc_info=True)
-        run_sync(update_clip_status(clip_id, "FAILED", str(e)))
+        logger.exception(f"Erro técnico no re-render do clipe {clip_id}: {e}")
+        run_sync(update_clip_status(clip_id, "FAILED", "Falha na renderização do clipe."))
         raise
     finally:
         if os.path.exists(srt_path):

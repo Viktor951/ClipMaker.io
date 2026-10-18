@@ -10,3 +10,10 @@ os.environ["REDIS_URL"] = "redis://localhost:6379/0"
 # Desativa o limiter do slowapi para testes não falharem por 429 durante execuções automáticas
 from backend.app.api.deps import limiter
 limiter.enabled = False
+
+@pytest.fixture(autouse=True)
+async def reset_db_pool():
+    yield
+    from backend.app.db.db_service import close_pool
+    await close_pool()
+

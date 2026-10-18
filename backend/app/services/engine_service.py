@@ -110,7 +110,17 @@ def process_video_full_pipeline(
     file_size_mb = os.path.getsize(input_path) / (1024 * 1024)
     logger.info(f"Iniciando para: {os.path.basename(input_path)} ({file_size_mb:.1f} MB)")
 
+    from backend.app.core.config import settings
+    t_pipeline_start = time.time()
+    max_job_sec = float(getattr(settings, "JOB_TIMEOUT_MINUTES", 90)) * 60.0
+
+    def _check_job_timeout(stage_name: str):
+        if time.time() - t_pipeline_start > max_job_sec:
+            logger.error(f"Job excedeu o tempo limite total ({max_job_sec/60:.1f}min) antes da etapa: {stage_name}")
+            raise TimeoutError("O processamento excedeu o tempo limite. Tente novamente.")
+
     # 1. Probe
+    _check_job_timeout("probe")
     logger.info("Etapa 1/4: Analisando vídeo (ffprobe)...")
     with timed("probe"):
         orig_w, orig_h, duration = video_service.get_video_info(input_path)
@@ -129,6 +139,7 @@ def process_video_full_pipeline(
             logger.warning(f"Não foi possível obter metadados do projeto {project_id}: {e}")
 
     # 2. Transcrição com Reuso
+    _check_job_timeout("transcription")
     norm_url = _normalize_url(source_url)
     f_hash = _compute_fast_file_hash(input_path)
     cached_transcription = None
@@ -172,6 +183,7 @@ def process_video_full_pipeline(
                 logger.warning(f"Falha ao persistir transcrição para cache: {e}")
 
     # 3. Geração de boundaries via LLM
+    _check_job_timeout("llm")
     logger.info("Etapa 3/4: Calculando melhores momentos...")
     if project_id:
         _update_status(project_id, "ANALYZING")
@@ -203,6 +215,7 @@ def process_video_full_pipeline(
                     logger.warning(f"Falha ao registrar ai_cuts_fallback: {e}")
 
     # 4. Renderização Paralela em Passe Único
+    _check_job_timeout("rendering")
     total_clips = len(clip_boundaries)
     parallelism = min(max(1, _get_render_parallelism()), max(1, total_clips))
     logger.info(f"Etapa 4/4: Renderizando {total_clips} clipe(s) (paralelismo={parallelism})...")
@@ -211,6 +224,7 @@ def process_video_full_pipeline(
         _update_status(project_id, "RENDERING")
 
     def _render_single_clip(clip_tuple):
+        _check_job_timeout(f"clip_{clip_tuple[0]+1}")
         i, item = clip_tuple
         clip_num = i + 1
         if isinstance(item, dict):
@@ -271,8 +285,8 @@ def process_video_full_pipeline(
             logger.info(f"[CLIPE {clip_num}] Gerando miniatura do clipe...")
             video_service.generate_thumbnail(input_path, start_sec + 1.0, thumb_path)
         except Exception as e:
-            logger.error(f"[CLIPE {clip_num}] Falha ao renderizar: {e}")
-            raise RuntimeError(f"Erro inesperado ao renderizar clipe {clip_num}: {str(e)}")
+            logger.exception(f"[CLIPE {clip_num}] Falha ao renderizar: {e}")
+            raise RuntimeError(f"Falha na renderização do clipe {clip_num}.")
         finally:
             try:
                 if os.path.exists(srt_path):

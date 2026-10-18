@@ -138,12 +138,13 @@ async def test_project_lifecycle():
         project_id = create_resp.json()["project_id"]
         assert project_id is not None
 
-        # 4. Checar status do projeto
+        # 4. Checar status do projeto (status DRAFT conforme Etapa B)
         status_resp = await ac.get(f"/api/projects/{project_id}/status", headers=headers)
         assert status_resp.status_code == 200
-        assert status_resp.json()["status"] == "PENDING"
+        assert status_resp.json()["status"] == "DRAFT"
         assert "aiCutsFallback" in status_resp.json()
         assert status_resp.json()["aiCutsFallback"] is False
+
 
 
 @pytest.mark.asyncio

@@ -434,3 +434,40 @@ Após a remoção dos decoradores duplicados no `worker.py` e consolidação na 
 - **Tempo Total Medido:**
   - **Tempo de execução da tarefa no worker Huey:** **135.24s**
   - **Tempo total ponta a ponta na API (do upload ao status READY):** **140.55s**
+
+---
+
+## 13. Investigação e Otimização da Fase LLM em Vídeos Curtos (Etapa B)
+
+### Diagnóstico do Intervalo de ~105s entre ANALYZING e RENDERING
+Na validação da Seção 12 (vídeo de 20.0s), observou-se uma transição lenta de **104.7s** entre `ANALYZING` (23.8s) e `RENDERING` (128.5s). A investigação profunda do pipeline e da chamada ao Gemini revelou:
+
+1. **Evidência Coletada nos Logs ("LLM RESULTADO"):**
+   - **Modelo Utilizado:** `gemini-3.8-flash`
+   - **Tentativas Realizadas:** 1 tentativa
+   - **Quota / Rate Limit (429):** `had_429 = False` (não houve erro 429 nem espera de quota)
+   - **Fonte dos Cortes:** Gemini (API oficial)
+   - **Tempo de Execução Medido:** **107.88s**
+   - **Retorno Obtido:** `[]` (array vazio — 0 clipes gerados diretamente)
+
+2. **Causa Raiz Identificada:**
+   - O prompt estático anterior impunha restrições matematicamente contraditórias para vídeos curtos:
+     - Regra rígida 1: "retornar EXATAMENTE 5 cortes (entre 4 e 6)".
+     - Regra rígida 2: "duração de CADA clipe deve ser de no mínimo 60 segundos e no máximo 90 segundos".
+   - Ao processar um vídeo de **20.0s**, o modelo `gemini-3.8-flash` (que possui capacidades avançadas de raciocínio / *extended thinking*) entrou em loops profundos de raciocínio tentando reconciliar restrições impossíveis (como extrair cinco cortes de 60s de um vídeo de 20s). Esse processo consumiu ~105 segundos de tempo de resposta.
+
+3. **Correção Implementada:**
+   - Criação da função `_get_clip_target_and_durations(duration)` em `ai_service.py`:
+     - Vídeos ultracurtos ($\le 30$s): 1 clipe alvo, duração mínima de $\sim 5$s a $20$s.
+     - Vídeos curtos ($30$s a $60$s): 1 a 2 clipes alvos, duração mínima de $10$s a $45$s.
+     - Vídeos médios ($60$s a $120$s): 2 a 3 clipes alvos.
+     - Vídeos longos ($> 120$s): 5 clipes alvos de 60s a 90s.
+   - O prompt passou a receber parâmetros dinâmicos compatíveis com a duração real do vídeo.
+   - Validação e sanitização automática dos boundaries no pós-processamento do JSON para impedir sobreposições e limites fora do vídeo.
+   - Ajuste do fallback matemático `_fallback_clip_boundaries` para gerar cortes proporcionais e sem sobreposição em vídeos curtos.
+
+4. **Novo Desempenho Medido:**
+   - **gemini-3.8-flash com prompt adaptado:** **11.60s** (-89.2% de latência na fase LLM).
+   - **gemini-flash-latest com prompt adaptado:** **6.87s** (-93.6% de latência).
+   - **Cortes Gerados:** 1 corte viral coerente de 4.5s a 20.0s com score 92 e hook contextual.
+
