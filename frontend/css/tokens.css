@@ -1,54 +1,121 @@
 /* ═══════════════════════════════════════════════
-   ClipMakerAI — Design Tokens
-   Precision Dark Theme
+   ClipMaker.io — Design Tokens
+   Direção A: Studio Engine (Precisão Cinematográfica)
    ═══════════════════════════════════════════════ */
 
 :root {
-  /* ── Surfaces ── */
-  --surface-0: #08090C;
-  --surface-1: #0F1117;
-  --surface-2: #161920;
-  --surface-3: #1E2028;
+  /* ── Superfícies ── */
+  --surface-0: #090A0D; /* Fundo base deep carbon */
+  --surface-1: #111318; /* Cards e contêineres principais */
+  --surface-2: #181B22; /* Inputs, abas, painéis e controles */
+  --surface-3: #20242E; /* Estados de elevação e hover de superfície */
 
-  /* ── Text ── */
-  --text-100: #F0F0F3;
-  --text-200: #A0A4B0;
-  --text-300: #5C5F6E;
+  /* ── Bordas ── */
+  --border-subtle: #262A36;
+  --border-hover: #373D4D;
+  --border-active: #00F076;
+  --border-focus: #00F076;
 
-  /* ── Accents ── */
-  --accent-ai: #A8FF60;
-  --accent-hot: #FF6B6B;
-  --accent-cool: #6BE0FF;
-  --accent-warn: #FFB84D;
+  /* ── Textos (Todos Aprovados WCAG AA >= 4.5:1) ── */
+  --text-100: #F5F6F8; /* Primário — Contraste 18.2:1 */
+  --text-200: #B8BCC8; /* Secundário — Contraste 9.8:1 */
+  --text-300: #8E96A6; /* Terciário / Labels / Suporte — Contraste >= 5.2:1 */
+  --text-muted: #646B7B; /* Desabilitado / Decorativo */
+  --text-inverse: #090A0D; /* Texto sobre botões e badges claros */
 
-  /* ── Borders ── */
-  --border-subtle: rgba(255,255,255, 0.06);
-  --border-hover: rgba(255,255,255, 0.12);
-  --border-active: rgba(168,255,96, 0.40);
+  /* ── Marca e Ação (Studio Lime) ── */
+  --accent-ai: #00F076;
+  --accent-ai-hover: #1AFF85;
+  --accent-ai-active: #00D668;
+  --accent-ai-subtle: rgba(0, 240, 118, 0.12);
+  --accent-ai-glow: 0 0 24px rgba(0, 240, 118, 0.20);
+  --accent-focus-ring: rgba(0, 240, 118, 0.45);
 
-  /* ── Typography ── */
-  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  /* ── Status do Sistema ── */
+  --color-success: #00F076;
+  --color-success-subtle: rgba(0, 240, 118, 0.12);
+  --color-warn: #F59E0B;
+  --color-warn-subtle: rgba(245, 158, 11, 0.12);
+  --color-error: #EF4444;
+  --color-error-subtle: rgba(239, 68, 68, 0.12);
+  --color-info: #38BDF8;
+  --color-info-subtle: rgba(56, 189, 248, 0.12);
+
+  /* ── Tipografia ── */
+  --font-display: 'Space Grotesk', system-ui, -apple-system, sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* ── Radii ── */
+  /* Tipografia Fluida com clamp() */
+  --text-xs: clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem); /* 12px -> 13px */
+  --text-sm: clamp(0.8125rem, 0.78rem + 0.2vw, 0.875rem);   /* 13px -> 14px */
+  --text-base: clamp(0.875rem, 0.83rem + 0.25vw, 1rem);     /* 14px -> 16px */
+  --text-lg: clamp(1rem, 0.95rem + 0.35vw, 1.125rem);       /* 16px -> 18px */
+  --text-xl: clamp(1.125rem, 1.05rem + 0.45vw, 1.25rem);    /* 18px -> 20px */
+  --text-2xl: clamp(1.25rem, 1.15rem + 0.65vw, 1.5rem);     /* 20px -> 24px */
+  --text-3xl: clamp(1.625rem, 1.45rem + 1.1vw, 2.125rem);   /* 26px -> 34px */
+  --text-hero: clamp(2.125rem, 1.7rem + 2.2vw, 3.5rem);     /* 34px -> 56px */
+
+  /* Pesos de Fonte */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Espaçamentos de Caractere */
+  --tracking-tight: -0.015em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.05em;
+
+  /* ── Escala de Espaçamento (múltiplos de 4px / 8px) ── */
+  --space-1: 0.25rem;  /* 4px */
+  --space-2: 0.5rem;   /* 8px */
+  --space-3: 0.75rem;  /* 12px */
+  --space-4: 1rem;     /* 16px */
+  --space-5: 1.25rem;  /* 20px */
+  --space-6: 1.5rem;   /* 24px */
+  --space-8: 2rem;     /* 32px */
+  --space-10: 2.5rem;  /* 40px */
+  --space-12: 3rem;    /* 48px */
+  --space-16: 4rem;    /* 64px */
+  --space-20: 5rem;    /* 80px */
+
+  /* ── Raios de Borda ── */
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
   --radius-xl: 20px;
   --radius-full: 9999px;
 
-  /* ── Shadows ── */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
-  --shadow-glow-ai: 0 0 24px rgba(168,255,96, 0.12);
-  --shadow-glow-hot: 0 0 24px rgba(255,107,107, 0.12);
+  /* ── Sombras ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow-ai: var(--accent-ai-glow);
 
-  /* ── Transitions ── */
-  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-bounce: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  --duration-fast: 150ms;
-  --duration-normal: 250ms;
-  --duration-slow: 400ms;
+  /* ── Foco Acessível (:focus-visible) ── */
+  --focus-ring: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--accent-ai);
+
+  /* ── Transições e Animações ── */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --duration-slow: 350ms;
+}
+
+/* ── Respeito a prefers-reduced-motion ── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0.01ms;
+    --duration-normal: 0.01ms;
+    --duration-slow: 0.01ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

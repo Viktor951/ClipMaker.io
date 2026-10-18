@@ -1,0 +1,6 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClipMaker.io">
+  <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
+  <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
+  <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
+  <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+</svg>

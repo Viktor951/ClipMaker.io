@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClipMakerAI — Reset & Base Typography
+   ClipMaker.io — Reset & Base Typography
    ═══════════════════════════════════════════════ */
 
 *, *::before, *::after {
@@ -32,13 +32,13 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-100);
   font-weight: 700;
   line-height: 1.15;
-  letter-spacing: -0.03em;
+  letter-spacing: var(--tracking-tight);
 }
 
-h1 { font-size: clamp(2.5rem, 5vw, 4rem); font-weight: 800; }
-h2 { font-size: clamp(1.5rem, 3vw, 2rem); }
-h3 { font-size: 1.25rem; }
-h4 { font-size: 1.1rem; }
+h1 { font-size: var(--text-hero); font-weight: 700; }
+h2 { font-size: var(--text-3xl); font-weight: 700; }
+h3 { font-size: var(--text-2xl); font-weight: 600; }
+h4 { font-size: var(--text-xl); font-weight: 600; }
 
 p { color: var(--text-200); }
 
@@ -54,7 +54,6 @@ button {
   font-family: inherit;
   cursor: pointer;
   border: none;
-  outline: none;
   background: none;
   color: inherit;
 }
@@ -63,7 +62,12 @@ input, textarea, select {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
-  outline: none;
+}
+
+/* ── Foco Acessível Visível Global (:focus-visible) ── */
+:focus-visible {
+  outline: 2px solid var(--accent-ai) !important;
+  outline-offset: 2px !important;
 }
 
 img, video {
@@ -72,7 +76,7 @@ img, video {
 }
 
 ::selection {
-  background: rgba(168, 255, 96, 0.25);
+  background: var(--accent-ai-subtle);
   color: var(--text-100);
 }
 

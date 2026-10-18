@@ -3,37 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClipMaker AI — Transforme vídeos longos em cortes virais</title>
-    <meta name="description" content="IA que analisa seu vídeo, encontra os melhores momentos, corta e adiciona legendas dinâmicas. Perfeito para TikTok, Reels e Shorts.">
+    <title>ClipMaker.io — Transforme vídeos longos em cortes virais</title>
+    <meta name="description" content="IA que analisa seu vídeo, encontra os melhores momentos, recorta em 9:16 e adiciona legendas dinâmicas. Perfeito para TikTok, Reels e Shorts.">
+    <meta name="theme-color" content="#090A0D">
+
+    <!-- Favicon & Touch Icons -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+
+    <!-- Open Graph / Meta de Compartilhamento -->
+    <meta property="og:title" content="ClipMaker.io — Cortes virais com inteligência artificial">
+    <meta property="og:description" content="Transforme vídeos longos em cortes verticais prontos para TikTok, Reels e Shorts com transcrição precisa e legendas dinâmicas.">
+    <meta property="og:image" content="assets/og-image.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ClipMaker.io — Cortes virais com inteligência artificial">
+    <meta name="twitter:description" content="Transforme vídeos longos em cortes verticais prontos para TikTok, Reels e Shorts com transcrição precisa e legendas dinâmicas.">
+    <meta name="twitter:image" content="assets/og-image.png">
     
-    <!-- Fonts: Máximo 2 famílias otimizadas com preconnect e display=swap -->
+    <!-- Fonts: Máximo 2 famílias Google Fonts (Space Grotesk + Inter) + Monoespaçada -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons: Subset vetorial leve local (~3KB, substitui Font Awesome de ~500KB) -->
-    <link rel="stylesheet" href="css/icons.css?v=80963d0a">
+    <link rel="stylesheet" href="css/icons.css?v=719f96b4">
     
     <!-- Stylesheets -->
-    <link rel="stylesheet" href="css/tokens.css?v=a632939d">
-    <link rel="stylesheet" href="css/reset.css?v=7ad93715">
-    <link rel="stylesheet" href="css/animations.css?v=f60dd6e7">
-    <link rel="stylesheet" href="css/layout.css?v=6daa3658">
-    <link rel="stylesheet" href="css/components.css?v=b7d29634">
-    <link rel="stylesheet" href="css/responsive.css?v=c1cac668">
+    <link rel="stylesheet" href="css/tokens.css?v=645ab069">
+    <link rel="stylesheet" href="css/reset.css?v=5786c012">
+    <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
+    <link rel="stylesheet" href="css/layout.css?v=f6832f6d">
+    <link rel="stylesheet" href="css/components.css?v=f25e06da">
+    <link rel="stylesheet" href="css/responsive.css?v=590edae3">
 </head>
 <body>
 
     <!-- ═══════════ NAVBAR ═══════════ -->
-    <nav class="navbar">
+    <nav class="navbar" aria-label="Navegação Principal">
         <div class="container nav-content">
-            <a href="#" class="logo">
-                <div class="logo-icon">C</div>
-                ClipMaker<span class="ai">AI</span>
+            <a href="#" class="logo" aria-label="ClipMaker.io Página Inicial">
+                <svg class="logo-symbol" width="30" height="30" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="2" y="2" width="32" height="32" rx="8" fill="#111318" stroke="#262A36" stroke-width="1.5"/>
+                    <path d="M8 11V8H13M28 8H23V11M8 25V28H13M28 28H23V25" stroke="#8E96A6" stroke-width="1.5" stroke-linecap="round"/>
+                    <rect x="13.5" y="7.5" width="9" height="21" rx="2.5" fill="#00F076" fill-opacity="0.18" stroke="#00F076" stroke-width="1.5"/>
+                    <polygon points="17,16 20.5,18 17,20" fill="#00F076"/>
+                </svg>
+                <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
             </a>
             <div class="nav-links">
-                <a href="#">Recursos</a>
-                <a href="#">Preços</a>
+                <a href="#como-funciona">Como funciona</a>
+                <a href="#recursos">Recursos</a>
                 <a href="#" class="btn-primary-outline" id="btn-login-nav">Login</a>
                 <a href="#" class="btn-primary btn-sm" id="btn-register-nav">Começar grátis</a>
             </div>
@@ -336,7 +357,7 @@
 
     <!-- Scripts com defer e versionamento -->
     <script src="js/ui.js?v=a5388e53" defer></script>
-    <script src="js/app.js?v=58d52c7d" defer></script>
+    <script src="js/app.js?v=aa0fe2f3" defer></script>
 
 </body>
 </html>

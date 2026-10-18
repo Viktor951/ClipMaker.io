@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════
-   ClipMakerAI — Animations & Keyframes
+   ClipMaker.io — Animations & Keyframes
    ═══════════════════════════════════════════════ */
 
 /* ── Fade In ── */
@@ -43,8 +43,8 @@
 }
 
 @keyframes pulseGlow {
-  0%, 100% { box-shadow: 0 0 12px rgba(168,255,96, 0.08); }
-  50%      { box-shadow: 0 0 28px rgba(168,255,96, 0.18); }
+  0%, 100% { box-shadow: 0 0 12px rgba(0, 240, 118, 0.10); }
+  50%      { box-shadow: 0 0 28px rgba(0, 240, 118, 0.22); }
 }
 
 /* ── Wave Bars (Processing) ── */

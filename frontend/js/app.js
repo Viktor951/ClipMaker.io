@@ -568,7 +568,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 history.pushState({ page: 'processing', projectId: data.project_id, sourceName }, '', url.toString());
 
                 updateStepUI(0);
-                if (percentageEl) percentageEl.innerText = "📥 Baixando mídia via fila...";
+                if (percentageEl) percentageEl.innerText = "Baixando mídia via fila...";
                 pollProjectStatus(data.project_id, sourceName);
             } else {
                 throw new Error("Resposta inesperada do servidor.");
@@ -690,23 +690,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Progresso real derivado da API (sem incrementos simulados de +5%)
                     if (data.status === 'DOWNLOADING') {
                         updateStepUI(0);
-                        if (percentageEl) percentageEl.innerText = `📥 Baixando vídeo por URL via fila...${queueSuffix}`;
+                        if (percentageEl) percentageEl.innerText = `Baixando vídeo por URL via fila...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '15%';
                     } else if (data.status === 'TRANSCRIBING') {
                         updateStepUI(1);
-                        if (percentageEl) percentageEl.innerText = `🧠 Extraindo áudio e transcrevendo com IA...${queueSuffix}`;
+                        if (percentageEl) percentageEl.innerText = `Extraindo áudio e transcrevendo com IA...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '35%';
                     } else if (data.status === 'ANALYZING') {
                         updateStepUI(2);
-                        if (percentageEl) percentageEl.innerText = `🔍 Detectando momentos virais com IA...${queueSuffix}`;
+                        if (percentageEl) percentageEl.innerText = `Detectando momentos virais com IA...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '65%';
                     } else if (data.status === 'RENDERING') {
                         updateStepUI(3);
-                        if (percentageEl) percentageEl.innerText = `✂️ Renderizando cortes no formato vertical...${queueSuffix}`;
+                        if (percentageEl) percentageEl.innerText = `Renderizando cortes no formato vertical...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '85%';
                     } else {
                         updateStepUI(0);
-                        if (percentageEl) percentageEl.innerText = `⏳ Na fila de processamento...${queueSuffix}`;
+                        if (percentageEl) percentageEl.innerText = `Na fila de processamento...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '10%';
                     }
                     scheduleNext();
