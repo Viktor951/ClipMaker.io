@@ -101,7 +101,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (item && item.loc) {
                     const field = item.loc[item.loc.length - 1];
                     if (field === "password") {
-                        if (item.type === "string_too_short") return "A senha deve ter no mínimo 6 caracteres.";
+                        if (item.type === "string_too_short") {
+                            const minLen = appConfig.min_password_length || 8;
+                            return `A senha deve ter no mínimo ${minLen} caracteres.`;
+                        }
                         return `Senha: ${item.msg || "inválida"}`;
                     }
                     if (field === "email") return "Por favor, digite um endereço de e-mail válido.";
@@ -286,7 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pollingTimeout = null;
     let currentRenderedProjectId = null;
     let currentUploadXhr = null;
-    let appConfig = { max_file_size_mb: 2000, max_duration_sec: 14400 };
+    let appConfig = { max_file_size_mb: 2000, max_duration_sec: 14400, min_password_length: 8 };
 
     async function loadAppConfig() {
         try {
@@ -298,6 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const mb = appConfig.max_file_size_mb;
                     const text = mb >= 1000 ? `${(mb / 1000).toFixed(mb % 1000 === 0 ? 0 : 1)}GB` : `${mb}MB`;
                     limitEl.innerText = `MP4, MOV ou WEBM — até ${text}`;
+                }
+                if (authPassword && appConfig.min_password_length) {
+                    authPassword.minLength = appConfig.min_password_length;
+                    authPassword.placeholder = `Sua senha (mínimo ${appConfig.min_password_length} caracteres)`;
                 }
             }
         } catch (e) {

@@ -10,9 +10,13 @@ from backend.app.db.db_service import get_user_by_email
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 import os
+import logging
+
+logger = logging.getLogger("clipmaker.limiter")
 
 def _get_limiter_storage_uri() -> str:
-    if os.getenv("ENVIRONMENT") == "test":
+    env = os.getenv("ENVIRONMENT", "development")
+    if env == "test":
         return "memory://"
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
@@ -20,7 +24,17 @@ def _get_limiter_storage_uri() -> str:
         client = redis.from_url(redis_url, socket_connect_timeout=1.0)
         client.ping()
         return redis_url
-    except Exception:
+    except Exception as e:
+        if env == "production":
+            logger.critical(f"Falha crítica no rate limiter: Redis indisponível em produção ({e}).")
+            raise RuntimeError(
+                f"Redis indisponível para rate limiting em produção ({e}). "
+                "A aplicação recusa inicialização sem Redis para evitar contorno do rate limit."
+            ) from e
+        logger.warning(
+            f"[AVISO] Redis indisponível para rate limiter ({e}). "
+            "Ambiente fora de produção: utilizando fallback 'memory://'."
+        )
         return "memory://"
 
 limiter = Limiter(

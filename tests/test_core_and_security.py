@@ -26,7 +26,16 @@ def test_jwt_token_lifecycle():
     assert decode_access_token("token.malformado.aqui") is None
 
 
-def test_anti_ssrf_url_validation():
+def test_anti_ssrf_url_validation(monkeypatch):
+    import socket
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        if host in ("www.youtube.com", "example.com"):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 80))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 80))]
+
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo)
+
     # URLs legítimas
     assert _is_safe_public_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ") is True
     assert _is_safe_public_url("http://example.com/video.mp4") is True

@@ -149,7 +149,7 @@ services:
       dockerfile: Dockerfile
       target: runtime
     image: clipmakerai:prod
-    command: sh -c "python -c 'from backend.app.services.ai_service import preload_whisper_model; preload_whisper_model()' && huey_consumer backend.app.worker.worker.huey -w 1 -k thread"
+    command: huey_consumer backend.app.worker.worker.huey -w 1 -k thread
     environment:
       <<: *app-env
       WHISPER_MODEL: ${WHISPER_MODEL:-base}

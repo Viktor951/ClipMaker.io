@@ -42,7 +42,10 @@ jobs:
         
     - name: Initialize Database
       run: |
-        PGPASSWORD=password psql -h localhost -U postgres -d clipmaker_db_test -f migrations/001_init.sql
+        for f in $(ls migrations/*.sql | sort); do
+          echo "Aplicando $f..."
+          PGPASSWORD=password psql -h localhost -U postgres -d clipmaker_db_test -v ON_ERROR_STOP=1 -f "$f"
+        done
 
         
     - name: Run Tests

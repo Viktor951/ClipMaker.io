@@ -13,7 +13,6 @@ MIN_DURATION_SEC = 60
 MAX_DURATION_SEC = 90
 
 logger = logging.getLogger("clipmaker.ai")
-logger.setLevel(logging.DEBUG)
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "2000"))
     MAX_DURATION_SEC: int = int(os.getenv("MAX_DURATION_SEC", "14400"))
     MAX_SOURCE_HEIGHT: int = int(os.getenv("MAX_SOURCE_HEIGHT", "1080"))
+    MIN_PASSWORD_LENGTH: int = int(os.getenv("MIN_PASSWORD_LENGTH", "8"))
 
     # Configurações do Whisper e Worker
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "auto")

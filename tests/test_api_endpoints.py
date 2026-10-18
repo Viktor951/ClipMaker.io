@@ -236,10 +236,15 @@ def test_viral_score_and_boundaries():
 
 @pytest.mark.asyncio
 async def test_async_url_route_queue_and_status(monkeypatch):
-    """Testa que a rota de URL responde imediatamente (<15ms) e cria o projeto como DOWNLOADING."""
+    import socket
     from unittest.mock import MagicMock
     mock_task = MagicMock()
     monkeypatch.setattr("backend.app.api.routers.video.download_and_process_url_task", mock_task)
+
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('142.250.190.46', 80))]
+
+    monkeypatch.setattr("socket.getaddrinfo", mock_getaddrinfo)
 
     async with get_client() as ac:
         email = f"url_user_{uuid.uuid4().hex[:8]}@example.com"
@@ -585,5 +590,7 @@ async def test_config_endpoints():
             assert data["max_file_size_mb"] > 0
             assert "max_duration_sec" in data
             assert "max_source_height" in data
+            assert "min_password_length" in data
+            assert data["min_password_length"] == 8
             assert "version" in data
 

@@ -7,7 +7,6 @@ import cv2
 import ffmpeg
 
 logger = logging.getLogger("clipmaker.video")
-logger.setLevel(logging.DEBUG)
 if not logger.handlers:
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))

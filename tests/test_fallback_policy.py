@@ -24,3 +24,21 @@ async def test_sqlite_fallback_denied_without_flag(monkeypatch):
             _backends[loop] = old_backend
 
 
+def test_rate_limiter_storage_fallback_policy(monkeypatch):
+    """Testa que _get_limiter_storage_uri falha em produção sem Redis e usa memory:// fora de produção."""
+    from backend.app.api.deps import _get_limiter_storage_uri
+
+    # 1. Em produção, se o Redis falhar, deve levantar RuntimeError com mensagem clara
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("REDIS_URL", "redis://invalid_host_redis_12345:6379/0")
+    with pytest.raises(RuntimeError) as exc_info:
+        _get_limiter_storage_uri()
+    assert "redis indisponível para rate limiting em produção" in str(exc_info.value).lower()
+
+    # 2. Fora de produção (development), deve permitir fallback para memory://
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    uri = _get_limiter_storage_uri()
+    assert uri == "memory://"
+
+
+

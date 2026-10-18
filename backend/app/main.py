@@ -80,6 +80,7 @@ def get_config():
         "max_file_size_mb": settings.MAX_FILE_SIZE_MB,
         "max_duration_sec": settings.MAX_DURATION_SEC,
         "max_source_height": settings.MAX_SOURCE_HEIGHT,
+        "min_password_length": settings.MIN_PASSWORD_LENGTH,
         "version": settings.VERSION,
     }
 

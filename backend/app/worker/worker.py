@@ -57,6 +57,18 @@ else:
     logger.warning("[AVISO] Fila Huey unificada inicializada com SqliteHuey local.")
 
 
+@huey.on_startup()
+def preload_models_on_worker_startup():
+    """Pré-carrega o modelo Whisper dentro do processo do worker para reutilização entre jobs."""
+    try:
+        from backend.app.services.ai_service import preload_whisper_model
+        logger.info("[WORKER] Executando pré-carregamento do modelo Whisper no startup do worker...")
+        preload_whisper_model()
+        logger.info("[WORKER] Modelo Whisper inicializado no processo do worker com sucesso.")
+    except Exception as e:
+        logger.warning(f"[WORKER] Falha ao pré-carregar modelo Whisper no startup: {e}")
+
+
 def _cleanup_runtime():
     """Limpeza agressiva de RAM e VRAM após qualquer task pesada."""
     gc.collect()

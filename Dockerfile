@@ -108,4 +108,4 @@ RUN mkdir -p /app/backend/temp_videos /app/cache /app/logs \
     && chown -R appuser:appuser /app/backend/temp_videos /app/cache /app/logs
 
 USER appuser
-CMD ["sh", "-c", "python -c 'from backend.app.services.ai_service import preload_whisper_model; preload_whisper_model()' && huey_consumer backend.app.worker.worker.huey -w 1 -k thread"]
+CMD ["huey_consumer", "backend.app.worker.worker.huey", "-w", "1", "-k", "thread"]
