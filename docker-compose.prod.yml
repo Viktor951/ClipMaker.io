@@ -132,36 +132,29 @@ services:
     mem_limit: 768m
     cpus: 1.0
 
-  # ── WORKER (Huey + Whisper GPU + FFmpeg) ─────────────────────────────────
+  # ── WORKER (Huey + Whisper CPU + FFmpeg) ─────────────────────────────────
   # ESCALABILIDADE DE WORKERS (Fila unificada):
   # - Subir mais de uma réplica do worker:
   #     docker compose -f docker-compose.prod.yml up -d --scale worker=2
   # - Definir quantas threads cada réplica usa:
   #     Ajuste o parâmetro -w <N> no comando abaixo (ex.: -w 1 -k thread).
-  #     Recomendado: 1 worker process com 1-2 threads para respeitar VRAM da GPU e evitar contenção de CPU.
+  #     Recomendado: 1 worker process com 1-2 threads para respeitar CPU/memória e evitar contenção.
   # - Fila unificada: backend.app.worker.worker.huey processa todas as tarefas unificadas (ingestão, transcrição e render).
+  # - Suporte a GPU NVIDIA: use o override com docker-compose.gpu.yml:
+  #     docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build
   worker:
     <<: *hardening
     build:
       context: .
       dockerfile: Dockerfile
-      target: runtime-gpu
-    image: clipmakerai:prod-gpu
+      target: runtime
+    image: clipmakerai:prod
     command: sh -c "python -c 'from backend.app.services.ai_service import preload_whisper_model; preload_whisper_model()' && huey_consumer backend.app.worker.worker.huey -w 1 -k thread"
     environment:
       <<: *app-env
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video
-      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
       WHISPER_IDLE_TIMEOUT_MINUTES: ${WHISPER_IDLE_TIMEOUT_MINUTES:-15}
     volumes: *app-volumes
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     depends_on:
       db:
         condition: service_healthy

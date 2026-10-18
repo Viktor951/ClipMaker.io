@@ -26,7 +26,7 @@ RUN pip install -r requirements.txt
 
 # ── ESTÁGIO 1B: BUILDER GPU (cuBLAS e cuDNN para CTranslate2) ─────────────────
 FROM builder AS builder-gpu
-RUN pip install --no-cache-dir nvidia-cublas-cu12 nvidia-cudnn-cu12
+RUN pip install --no-cache-dir nvidia-cublas-cu12==12.9.2.10 nvidia-cudnn-cu12==9.27.0.42
 
 
 # ── ESTÁGIO 2: RUNTIME (CPU) ─────────────────────────────────────────────────

@@ -9,9 +9,17 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1
 
 # 2) Edite .env: DOMAIN (localhost para teste) e GEMINI_API_KEY
 
-# 3) Validar, buildar e subir
+# 3) Validar e subir os containers:
+
+# ── Modo SEM GPU (Padrão CPU):
 docker compose -f docker-compose.prod.yml config -q
 docker compose -f docker-compose.prod.yml up -d --build
+
+# ── Modo COM GPU (NVIDIA CUDA + NVENC):
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml config -q
+docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build
+
+# 4) Verificar status dos containers
 docker compose -f docker-compose.prod.yml ps        # todos "healthy" (migrate = Exited 0)
 docker compose -f docker-compose.prod.yml logs -f api worker
 ```
@@ -91,8 +99,9 @@ Compactar o vhdx depois de limpezas: `docker system prune -af --volumes` (**cuid
 
 | Tarefa | Comando |
 |---|---|
-| Atualizar | `git pull; docker compose -f docker-compose.prod.yml up -d --build` (migrações rodam sozinhas) |
-| Nova migração | criar `migrations/006_etapa_b_job_robustness.sql` (idempotente) |
+| Atualizar (CPU) | `git pull; docker compose -f docker-compose.prod.yml up -d --build` |
+| Atualizar (GPU) | `git pull; docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build` |
+| Nova migração | criar `migrations/00X_nome.sql` (idempotente) |
 | Logs | `docker compose -f docker-compose.prod.yml logs -f --tail=100 api` (JSON em stdout) |
 | Parar | `docker compose -f docker-compose.prod.yml down` (sem `-v`!) |
 | Testes | `python -m pytest -v` |
