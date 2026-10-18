@@ -168,3 +168,56 @@ Comparando o Host (com GPU) e o Container de Produção (com CPU limitada a 2.0 
 ### 3º Transcrição de Áudio (Whisper): 30.37s no Container (12.9% do total)
 - O áudio completo de 6.77 minutos é transcrito pelo modelo `tiny` com 4 threads na CPU em ~30 segundos no container (vs ~19-22s no host).
 - A pré-extração do áudio em WAV 16kHz mono antes de invocar o Whisper e o paralelismo controlado representam oportunidades claras para diminuir esse tempo.
+
+---
+
+## 6. Diagnóstico de Etapas do FFmpeg (Tabela 4)
+
+Para entender com precisão cirúrgica onde o tempo é consumido durante o processamento de um clipe, foi executado um diagnóstico isolando cada etapa da cadeia de processamento em **UM clipe de 75.0s** (`0.0s -> 75.0s`) do vídeo de teste, medindo com `-benchmark -loglevel info` e descartando o muxing com saída nula (`-f null -`).
+
+### Tabela 4: Decomposição Incremental do FFmpeg (Clipe de 75s)
+
+| Variante Medida | Host (`rtime`) | Container (`rtime`) | Δ Container | CPU Container (`utime`) | Observações |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **a) Só Decodificar** (sem filtros, sem encode) | **3.55s** (21.1x) | **7.46s** (10.1x) | — | 14.26s | Leitura e descompressão do VP9 1080p |
+| **b) Decodificar + Crop + Scale** | **3.86s** (19.4x) | **10.74s** (7.04x) | +3.28s | 19.76s | `crop=608:1080:656:0,scale=1080:1920` |
+| **c) (b) + Filtro Subtitles** | **11.86s** (6.32x) | **14.83s** (5.06x) | +4.09s | 27.62s | Rasterização libass / fontconfig / FreeType |
+| **d) (c) + Encode libx264 ultrafast** | **13.65s** (5.50x) | **23.95s** (3.14x) | +9.12s | 45.74s | Compressão H.264 CPU (`crf 23, ultrafast`) |
+| **e) (c) + Encode h264_nvenc** | **12.75s** (5.87x) | *Indisponível* | — | 29.13s | Aceleração GPU (`Cannot load libcuda.so.1` no container) |
+
+### Conclusão em Uma Frase:
+> **No container limitado a 2 CPUs, o tempo é dominado pelo encode de CPU via libx264 (38,1%) e pelo decode (31,1%), enquanto no host com aceleração de hardware o gargalo crítico é o filtro de legendas (libass/subtitles), que sozinho adiciona 8 segundos e consome mais de 60% de todo o pipeline de vídeo.**
+
+---
+
+## 7. Análise de Cota de CPU e Concorrência de Threads
+
+Foi realizada a inspeção do subsistema de cgroups e do runtime do Python no container worker:
+- **Cota Real do Container (`/sys/fs/cgroup/cpu.max`):**
+  - Valor lido: `200000 100000`
+  - Quota: 200.000 µs por período de 100.000 µs = **2.0 CPUs reais** (limite rígido imposto pelo kernel via CFS).
+- **Detecção do Python (`os.cpu_count()`):**
+  - Valor retornado: **12** (o Python lê o número de processadores lógicos da máquina/VM hospedeira WSL2, e não a cota do cgroup).
+- **Threads Efetivas em Execução:**
+  - **Whisper (`ai_service.py`):** `cpu_threads = min(4, max(2, (os.cpu_count() or 2) // 2))` → com `os.cpu_count() == 12`, aloca **4 threads**.
+  - **FFmpeg (`video_service.py`):** `cores = os.cpu_count() or 2` → aloca **4 threads** via `-threads 4` (e a `libx264` aloca pools de threads extras para lookahead e slices).
+- **Diagnóstico:**
+  - **SIM, há mais threads ativas (4 threads no Whisper e 4+ no FFmpeg) do que a cota física de CPU do container (2.0 CPUs).**
+  - Essa sobre-alocação (oversubscription) de 2x gera concorrência acirrada entre threads, saturação da fila de execução do escalonador CFS do Linux, context switching excessivo e throttling de ciclos de CPU.
+
+---
+
+## 8. Log Aprimorado do Face Tracking
+
+Para total rastreabilidade do corte inteligente em produção, a rotina de tracking facial registra por clipe:
+- Quantidade de frames amostrados (intervalo a cada 5 frames)
+- Total de frames brutos lidos
+- Quantidade de detecções positivas de rostos
+- Taxa de detecção percentual
+- Coordenada `crop_x` final calculada para a janela 9:16 (junto com o `center_x` suavizado)
+
+**Exemplo de log emitido pelo worker:**
+```text
+[clipmaker.video] Face tracking concluído: 61 frames amostrados (de 301 lidos), 9 detecções (taxa de detecção: 14.8%), crop_x final=652 (center_x=955).
+```
+

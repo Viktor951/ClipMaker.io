@@ -167,6 +167,7 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         end_frame = min(int((end_sec - start_sec) * fps), max_frames)
         total_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        total_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         
         current_center_x = total_width // 2
         smoothed_center_x = float(current_center_x)
@@ -178,6 +179,7 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
         current_frame = 0
+        frames_sampled = 0
 
         while current_frame <= end_frame:
             ret, frame = cap.read()
@@ -185,6 +187,7 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
                 break
 
             if current_frame % 5 == 0:  # A cada 5 frames (antes era 3) — reduz processamento
+                frames_sampled += 1
                 # Redimensionar para resolução menor antes de converter para grayscale
                 if scale_factor < 1.0:
                     small_frame = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_AREA)
@@ -231,7 +234,16 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
             except OSError:
                 pass
 
-    logger.info(f"Face tracking concluído: {frames_processed} frames, {faces_found} detecções.")
+    detection_rate = (faces_found / frames_sampled * 100.0) if frames_sampled > 0 else 0.0
+    target_crop_w = int(total_height * 9 / 16) if total_height else 608
+    target_crop_w -= (target_crop_w % 2)
+    final_crop_x = max(0, min(int(smoothed_center_x) - (target_crop_w // 2), total_width - target_crop_w))
+
+    logger.info(
+        f"Face tracking concluído: {frames_sampled} frames amostrados (de {frames_processed} lidos), "
+        f"{faces_found} detecções (taxa de detecção: {detection_rate:.1f}%), "
+        f"crop_x final={final_crop_x} (center_x={int(smoothed_center_x)})."
+    )
     return int(smoothed_center_x)
 
 # ============================================================
