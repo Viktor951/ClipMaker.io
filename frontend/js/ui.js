@@ -1,4 +1,7 @@
 // UI Controller and rendering helpers
+const API_BASE_URL = window.API_BASE_URL || (window.location.protocol === 'file:' ? 'http://localhost:8000' : '');
+window.API_BASE_URL = API_BASE_URL;
+const API_BASE = `${API_BASE_URL}/api`;
 
 function escapeHtml(str) {
     if (!str) return '';
@@ -75,7 +78,7 @@ window.showToast = showToast;
 
 async function fetchSignedUrl(clipId) {
     const token = localStorage.getItem('clipmaker_token') || '';
-    const res = await fetch(`/api/videos/${encodeURIComponent(clipId)}/signed-url`, {
+    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(clipId)}/signed-url`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`
@@ -332,7 +335,7 @@ const UI = {
                 const quality = document.getElementById('quality-select').value || '1080p';
                 
                 try {
-                    const res = await fetch(`/api/projects/clip/${clipIdentifier}/re-render`, {
+                    const res = await fetch(`${API_BASE}/projects/clip/${clipIdentifier}/re-render`, {
                         method: 'POST',
                         headers: { 
                             'Content-Type': 'application/json',
@@ -364,7 +367,7 @@ const UI = {
                     let pollSuccess = false;
                     for (let attempt = 0; attempt < 60; attempt++) {
                         await new Promise(resolve => setTimeout(resolve, 2000));
-                        const statusRes = await fetch(`/api/projects/clip/${clipIdentifier}/status`, {
+                        const statusRes = await fetch(`${API_BASE}/projects/clip/${clipIdentifier}/status`, {
                             headers: { 'Authorization': `Bearer ${localStorage.getItem('clipmaker_token')}` }
                         });
                         if (!statusRes.ok) continue;

@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://localhost")
+    ALLOWED_ORIGINS: str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000,http://127.0.0.1:8000,http://localhost,http://127.0.0.1,null")
 
     # Diretório compartilhado entre API e worker (uploads, clipes renderizados)
     TEMP_DIR: str = os.getenv("TEMP_DIR", str(_BACKEND_DIR / "temp_videos"))
