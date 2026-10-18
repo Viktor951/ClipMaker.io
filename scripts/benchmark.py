@@ -56,10 +56,9 @@ def execute_single_run(video_path: str, skip_llm: bool, aspect_ratio: str, keep_
     llm_time = sum(item["seconds"] for item in raw_timings if item["stage"] == "llm")
     face_time = sum(item["seconds"] for item in raw_timings if item["stage"] == "face_tracking")
     render_time = sum(item["seconds"] for item in raw_timings if item["stage"] == "render")
-    sub_time = sum(item["seconds"] for item in raw_timings if item["stage"] == "subtitles")
 
     clip_count = len(clips)
-    sum_accounted = probe_time + trans_time + llm_time + face_time + render_time + sub_time
+    sum_accounted = probe_time + trans_time + llm_time + face_time + render_time
     overhead_time = max(0.0, t_total - sum_accounted)
 
     if not keep_output:
@@ -72,7 +71,6 @@ def execute_single_run(video_path: str, skip_llm: bool, aspect_ratio: str, keep_
         "llm": llm_time,
         "face_tracking": face_time,
         "render": render_time,
-        "subtitles": sub_time,
         "overhead": overhead_time,
         "clip_count": clip_count,
         "llm_meta": get_last_llm_meta(),
@@ -127,7 +125,6 @@ def run_benchmark(video_path: str, skip_llm: bool = False, aspect_ratio: str = "
     med_llm, min_llm, max_llm, _ = get_stats("llm")
     med_face, min_face, max_face, _ = get_stats("face_tracking")
     med_render, min_render, max_render, _ = get_stats("render")
-    med_sub, min_sub, max_sub, _ = get_stats("subtitles")
     med_over, min_over, max_over, _ = get_stats("overhead")
     clip_count = all_results[0]["clip_count"]
     llm_meta = all_results[-1]["llm_meta"]
@@ -147,9 +144,8 @@ def run_benchmark(video_path: str, skip_llm: bool = False, aspect_ratio: str = "
         print_row("2. Transcrição (Whisper)", med_trans, min_trans, max_trans, "Áudio -> segmentos")
         print_row("3. LLM (Detecção Momentos)", med_llm, min_llm, max_llm, "Fallback mat." if skip_llm else "Gemini API")
         print_row("4. Face Tracking (OpenCV)", med_face, min_face, max_face, f"{clip_count} cortes analisados")
-        print_row("5. Render Vídeo (FFmpeg)", med_render, min_render, max_render, "Corte e re-enquadramento")
-        print_row("6. Legendas Burn-in (FFmpeg)", med_sub, min_sub, max_sub, "Re-render com legendas")
-        print_row("7. Overhead / E/S / Thumbs", med_over, min_over, max_over, "Thumbs, GC e IO de disco")
+        print_row("5. Render Vídeo (FFmpeg)", med_render, min_render, max_render, "Corte, enquadramento e legendas (passe único)")
+        print_row("6. Overhead / E/S / Thumbs", med_over, min_over, max_over, "Thumbs, GC e IO de disco")
         print("-" * 85)
         print(f"{'TEMPO TOTAL PIPELINE':<28} | {med_total:>8.2f}s | {min_total:>6.2f}s - {max_total:<6.2f}s | {'100.0%':>6} | {runs} rodada(s) executada(s)")
     else:
@@ -164,9 +160,8 @@ def run_benchmark(video_path: str, skip_llm: bool = False, aspect_ratio: str = "
         print_single_row("2. Transcrição (Whisper)", med_trans, "Áudio -> segmentos e palavras")
         print_single_row("3. LLM (Detecção Momentos)", med_llm, "Fallback matemático" if skip_llm else "Gemini API")
         print_single_row("4. Face Tracking (OpenCV)", med_face, f"{clip_count} clipe(s) processados")
-        print_single_row("5. Render Vídeo (FFmpeg)", med_render, "Corte e re-enquadramento")
-        print_single_row("6. Legendas Burn-in (FFmpeg)", med_sub, "Re-render com legendas")
-        print_single_row("7. Overhead / E/S / Thumbnail", med_over, "Thumbs, GC e IO de disco")
+        print_single_row("5. Render Vídeo (FFmpeg)", med_render, "Corte, enquadramento e legendas (passe único)")
+        print_single_row("6. Overhead / E/S / Thumbnail", med_over, "Thumbs, GC e IO de disco")
         print("-" * 85)
         print(f"{'TEMPO TOTAL PIPELINE':<30} | {med_total:>10.2f}s | {'100.0%':>9} | {clip_count} clipe(s) gerado(s)")
 
@@ -189,7 +184,6 @@ def run_benchmark(video_path: str, skip_llm: bool = False, aspect_ratio: str = "
         "med_llm": med_llm,
         "med_face_tracking": med_face,
         "med_render": med_render,
-        "med_subtitles": med_sub,
         "med_overhead": med_over,
         "clip_count": clip_count,
         "llm_meta": llm_meta,

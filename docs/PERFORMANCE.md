@@ -235,7 +235,7 @@ Nesta etapa, o ambiente de execução do worker foi profundamente otimizado em i
    - Elimina os gargalos de latência de I/O em leitura/escrita de sub-clipes e renderizações intermediárias do FFmpeg.
    - Mantidos no host `D:` apenas dados leves e persistentes: cache de modelos HuggingFace (`/app/cache`), logs estruturados (`/app/logs`) e dados do Redis.
 3. **Aceleração por GPU (NVIDIA RTX 3050 6GB):**
-   - Criação do target multi-stage `runtime-gpu` no [Dockerfile](file:///c:/Users/João Victor/Documents/Antigravity Projects/ClipMakerAI/Dockerfile) com bibliotecas mínimas `nvidia-cublas-cu12` e `nvidia-cudnn-cu12` via pip (sem necessidade de imagem base CUDA de 10GB).
+   - Criação do target multi-stage `runtime-gpu` no [Dockerfile](../Dockerfile) com bibliotecas mínimas `nvidia-cublas-cu12` e `nvidia-cudnn-cu12` via pip (sem necessidade de imagem base CUDA de 10GB).
    - Whisper agora detecta GPU via `ctranslate2.get_cuda_device_count()` e roda em `float16` (com fallback robusto para `int8` em CPU). Modelo configurável via `WHISPER_MODEL` (padrão `small` em GPU).
    - FFmpeg no Debian Bookworm recebeu passthrough via `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video`, habilitando `h264_nvenc` por hardware nativamente dentro do container.
 4. **Cache Global e Pré-carregamento do Whisper:**
@@ -275,6 +275,7 @@ Nesta etapa, o fluxo interno de processamento dos clipes foi completamente reest
 ### 1. Encode Único (Eliminação de `clean_*.mp4`)
 - **Problema Anterior:** Cada clipe era codificado duas vezes. O pipeline gerava primeiro um clipe limpo (`clean_<uuid>.mp4`) sem legendas e depois executava um segundo comando FFmpeg (`re_render_clip`) para queimar as legendas SRT. Esse segundo passe consumia 35.56s no container.
 - **Solução Implementada:** O `video_service.render_clip` foi unificado para integrar `crop`, `scale` e o filtro `subtitles` em uma **única passagem** (`[0:v]crop=...:scale=...,subtitles='...':force_style='...'[v]`). O arquivo intermediário `clean_*.mp4` foi 100% eliminado.
+- **Consolidação de Etapas e Benchmark:** Como a legenda agora é parte integrante do render em passe único, o bloco vazio `with timed("subtitles"): pass` em `engine_service.py` foi removido. A etapa isolada de legendas (que aparecia com 0.00s) não é mais listada nos benchmarks (`scripts/benchmark.py`) nem nos relatórios de performance, integrando-se diretamente ao tempo da etapa de Render.
 - **Re-render no Worker:** O `re_render_clip_task` agora re-renderiza sempre a partir do vídeo-fonte em um único passe via `extract_and_crop_clip` reutilizando o `face_center_x` original. Caso o vídeo-fonte tenha sido removido pelo cleanup, utiliza o clipe final anterior como fonte registrando um log de aviso (`[AVISO] Vídeo fonte não encontrado... Usando clipe anterior`).
 
 ### 2. Enquadramento Persistente (`face_center_x`)

@@ -1344,7 +1344,7 @@ def main():
     r_code = p_code.add_run(
         "============================= test session starts =============================\n"
         "platform win32 -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0\n"
-        "rootdir: C:\\Users\\João Victor\\Documents\\Antigravity Projects\\ClipMakerAI\n"
+        "rootdir: /app\n"
         "configfile: pytest.ini\n"
         "testpaths: tests\n"
         "plugins: anyio-4.15.0, asyncio-1.4.0\n"

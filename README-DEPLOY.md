@@ -3,7 +3,7 @@
 ## 1. Primeira execução
 
 ```powershell
-# 1) Cria D:\docker-data\clipmaker\{videos,cache,logs,redis,caddy} e gera .env com segredos fortes
+# 1) Cria D:\docker-data\clipmaker\{videos,cache,logs,redis} e gera .env com segredos fortes
 #    (se já existir um .env antigo, renomeie-o antes: ele tem SECRET_KEY fraca)
 powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1
 
@@ -99,10 +99,13 @@ Compactar o vhdx depois de limpezas: `docker system prune -af --volumes` (**cuid
 
 | Tarefa | Comando |
 |---|---|
-| Atualizar (CPU) | `git pull; docker compose -f docker-compose.prod.yml up -d --build` |
-| Atualizar (GPU) | `git pull; docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build` |
+| Atualizar (CPU) | `git pull; python scripts/version_assets.py; docker compose -f docker-compose.prod.yml up -d --build` |
+| Atualizar (GPU) | `git pull; python scripts/version_assets.py; docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build` |
+| Versionar assets | `python scripts/version_assets.py` (invalida cache do Nginx via hash) |
 | Nova migração | criar `migrations/00X_nome.sql` (idempotente) |
 | Logs | `docker compose -f docker-compose.prod.yml logs -f --tail=100 api` (JSON em stdout) |
 | Parar | `docker compose -f docker-compose.prod.yml down` (sem `-v`!) |
 | Testes | `python -m pytest -v` |
+
+> **Política de Banco de Dados:** O ambiente de produção (`ENVIRONMENT=production`) rejeita estritamente conexões SQLite. O fallback local para SQLite só é liberado em desenvolvimento fora do Docker com `ALLOW_SQLITE_FALLBACK=true` e `ENVIRONMENT=development`.
 

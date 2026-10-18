@@ -1,6 +1,13 @@
 // Main application logic and orchestrator
 document.addEventListener('DOMContentLoaded', () => {
 
+    const showToast = (msg, type = 'info', duration = 4500) => {
+        if (typeof window.showToast === 'function') {
+            return window.showToast(msg, type, duration);
+        }
+        console.warn(`[Toast ${type}]: ${msg}`);
+    };
+
     const API_BASE = '/api';
     let authToken = localStorage.getItem('clipmaker_token') || null;
 
@@ -42,7 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const url = new URL(window.location.href);
                 url.searchParams.delete('project');
                 history.replaceState({ page: 'home' }, '', url.pathname);
-                alert("Você saiu da sua conta.");
+                showToast("Você saiu da sua conta.", "info");
             } else {
                 isLoginMode = true;
                 updateAuthModalUI();
@@ -153,12 +160,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (!res.ok) {
                         throw new Error(parseApiError(resData, "Erro ao cadastrar"));
                     }
-                    alert("Conta criada com sucesso! Faça login agora.");
+                    showToast("Conta criada com sucesso! Faça login agora.", "success");
                     isLoginMode = true;
                     updateAuthModalUI();
                 }
             } catch (err) {
-                alert(err.message || "Ocorreu um erro inesperado.");
+                showToast(err.message || "Ocorreu um erro inesperado.", "error");
             } finally {
                 btnSubmitAuth.disabled = false;
                 updateAuthModalUI();
@@ -233,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnGenerateUrl) {
         btnGenerateUrl.addEventListener('click', () => {
             const url = videoUrlInput.value.trim();
-            if (!url) { alert('Insira um link válido.'); videoUrlInput.focus(); return; }
+            if (!url) { showToast('Insira um link válido.', 'error'); videoUrlInput.focus(); return; }
             startProcessingPipeline(url, false);
         });
     }
@@ -430,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isProcessing) return;
         
         if (!authToken) {
-            alert("Por favor, faça login ou cadastre-se para gerar clipes!");
+            showToast("Por favor, faça login ou cadastre-se para gerar clipes!", "info");
             authModal.classList.remove('hidden');
             return;
         }
@@ -459,7 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const maxMB = appConfig.max_file_size_mb || 2000;
             if (fileOrUrl.size > maxMB * 1024 * 1024) {
                 const sizeMB = (fileOrUrl.size / (1024 * 1024)).toFixed(1);
-                alert(`O arquivo selecionado (${sizeMB}MB) ultrapassa o limite máximo de ${maxMB}MB suportado pelo servidor.`);
+                showToast(`O arquivo selecionado (${sizeMB}MB) ultrapassa o limite máximo de ${maxMB}MB suportado pelo servidor.`, "error");
                 switchView('home');
                 resetUIState();
                 return;
@@ -501,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 (error) => {
                     if (cancelBtn) cancelBtn.classList.add('hidden');
                     if (error.message !== "Upload cancelado pelo usuário.") {
-                        alert("Erro: " + error.message);
+                        showToast("Erro: " + error.message, "error");
                     }
                     switchView('home');
                     resetUIState();
@@ -534,7 +541,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     authToken = null;
                     localStorage.removeItem('clipmaker_token');
                     updateNav();
-                    alert("Sua sessão expirou. Faça login novamente.");
                     authModal.classList.remove('hidden');
                     switchView('home');
                     resetUIState();
@@ -561,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error("Resposta inesperada do servidor.");
             }
         } catch (error) {
-            alert("Erro: " + error.message);
+            showToast("Erro: " + error.message, "error");
             switchView('home');
             resetUIState();
         }
@@ -598,7 +604,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) {
                     if (res.status === 401) {
                         stopPolling();
-                        alert("Sessão expirada durante o processamento. Faça login novamente.");
                         authToken = null;
                         localStorage.removeItem('clipmaker_token');
                         updateNav();
@@ -660,7 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     stopPolling();
                     removeRenderingBanner();
                     if (percentageEl) percentageEl.classList.remove('pulse-animation');
-                    alert("Erro no processamento: " + (data.error || "Desconhecido"));
+                    showToast("Erro no processamento: " + (data.error || "Desconhecido"), "error");
                     localStorage.removeItem('clipmaker_active_project');
                     localStorage.removeItem('clipmaker_active_source_name');
                     const url = new URL(window.location.href);
@@ -768,7 +773,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     authToken = null;
                     localStorage.removeItem('clipmaker_token');
                     updateNav();
-                    alert("Sua sessão expirou. Faça login novamente.");
                     authModal.classList.remove('hidden');
                     switchView('home');
                     resetUIState();
@@ -813,7 +817,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return true;
             } else if (data.status === 'FAILED') {
                 stopPolling();
-                alert("Erro no processamento do vídeo: " + (data.error || "Desconhecido"));
+                showToast("Erro no processamento do vídeo: " + (data.error || "Desconhecido"), "error");
                 localStorage.removeItem('clipmaker_active_project');
                 localStorage.removeItem('clipmaker_active_source_name');
                 const url = new URL(window.location.href);

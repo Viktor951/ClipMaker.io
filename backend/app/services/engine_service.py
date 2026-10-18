@@ -275,10 +275,6 @@ def process_video_full_pipeline(
                     parallelism=parallelism
                 )
             
-            with timed("subtitles"):
-                # Passe único: legendas integradas diretamente no render_clip
-                pass
-
             logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
 
             # Geração de thumbnail real do clipe (~1s)

@@ -10,6 +10,69 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+function showToast(message, type = 'info', duration = 4500) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    const isError = type === 'error';
+    const roleAttr = isError ? 'alert' : 'status';
+    const ariaLive = isError ? 'assertive' : 'polite';
+    
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', roleAttr);
+    toast.setAttribute('aria-live', ariaLive);
+
+    let iconHtml = '<i class="fa-solid fa-circle-info"></i>';
+    if (type === 'success') {
+        iconHtml = '<i class="fa-solid fa-circle-check"></i>';
+    } else if (type === 'error') {
+        iconHtml = '<i class="fa-solid fa-circle-exclamation"></i>';
+    }
+
+    toast.innerHTML = `
+        <span class="toast-icon">${iconHtml}</span>
+        <div class="toast-message">${escapeHtml(message)}</div>
+        <button type="button" class="toast-close-btn" aria-label="Fechar notificação">&times;</button>
+    `;
+
+    let closed = false;
+    let timer = null;
+
+    const removeToast = () => {
+        if (closed) return;
+        closed = true;
+        if (timer) clearTimeout(timer);
+        toast.classList.add('toast-hiding');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 220);
+    };
+
+    const closeBtn = toast.querySelector('.toast-close-btn');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeToast();
+        });
+    }
+
+    if (duration > 0) {
+        timer = setTimeout(removeToast, duration);
+    }
+
+    container.appendChild(toast);
+    return toast;
+}
+
+window.showToast = showToast;
+
 async function fetchSignedUrl(clipId) {
     const token = localStorage.getItem('clipmaker_token') || '';
     const res = await fetch(`/api/videos/${encodeURIComponent(clipId)}/signed-url`, {
@@ -352,7 +415,7 @@ const UI = {
                         }
                     }
                 } catch (err) {
-                    alert('Falha ao renderizar clipe: ' + err.message);
+                    showToast('Falha ao renderizar clipe: ' + err.message, 'error');
                 } finally {
                     newBtn.innerHTML = originalText;
                     newBtn.disabled = false;

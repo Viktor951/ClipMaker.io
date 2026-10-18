@@ -2,7 +2,7 @@
 # Arquivo em ASCII de proposito (compativel com PowerShell 5.1).
 param([string]$DataRoot = "D:/docker-data/clipmaker")
 
-foreach ($d in "videos","cache","logs","redis","caddy/data","caddy/config") {
+foreach ($d in "videos","cache","logs","redis") {
     New-Item -ItemType Directory -Force -Path (Join-Path $DataRoot $d) | Out-Null
 }
 Write-Host "Diretorios criados em $DataRoot"

@@ -63,3 +63,9 @@ def test_srt_timestamp_formatting():
     assert format_timestamp(0.0) == "00:00:00,000"
     assert format_timestamp(65.5) == "00:01:05,500"
     assert format_timestamp(3661.123) == "01:01:01,123"
+
+
+def test_asset_versioning_hashes():
+    from scripts.version_assets import update_asset_versions
+    assert update_asset_versions(check_only=True) is True
+

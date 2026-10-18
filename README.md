@@ -20,9 +20,9 @@ A plataforma automatiza todo o pipeline de pós-produção: transcrição de áu
 - 🧠 **Detecção Inteligente de Momentos Virais:** Transcrição veloz com **Faster-Whisper** e ranqueamento contextual de ganchos virais via **Google Gemini**.
 - 🎯 **Face Tracking Automático:** Detecção facial com **OpenCV** para manter o interlocutor centralizado no enquadramento vertical (9:16).
 - 💬 **Legendas Dinâmicas Sincronizadas:** Renderização de legendas palavra por palavra com estilos personalizáveis diretamente no vídeo via **FFmpeg**.
-- ⚡ **Processamento Assíncrono:** Fila de tarefas pesadas com **Huey** (Redis em produção e fallback para SQLite local em desenvolvimento).
-- 📱 **Editor de Clipes Integrado:** Ajuste fino de palavras, timing, estilo de legenda e aspect ratio direto no navegador.
-- 🛡️ **Segurança por Padrão:** Autenticação JWT com Bcrypt, queries parametrizadas (AsyncPG), proteção estrita contra SSRF em URLs externas, rate limiting e containers com usuário não-root.
+- ⚡ **Processamento Assíncrono:** Fila mestre única de tarefas com **Huey** (`clipmaker_tasks`) sobre Redis em produção. Em desenvolvimento local fora do Docker, suporta fallback seguro para SQLite caso `ALLOW_SQLITE_FALLBACK=true` e `ENVIRONMENT != "production"`.
+- 📱 **Editor de Clipes Integrado:** Ajuste fino de palavras, timing, estilo de legenda e aspect ratio direto no navegador com toasts acessíveis.
+- 🛡️ **Segurança por Padrão:** Autenticação JWT com Bcrypt, queries parametrizadas (AsyncPG), proteção estrita contra SSRF com resolução DNS global, rate limiting distribuído no Redis e containers sem privilégios root.
 
 ---
 
@@ -45,7 +45,7 @@ A plataforma automatiza todo o pipeline de pós-produção: transcrição de áu
                                    ┌───────────────┴───────────────┐
                                    ▼                               ▼
                           [ PostgreSQL 15 ]                   [ Redis 7 ]
-                         (Dados e Projetos)               (Fila de Tarefas)
+                         (Dados e Projetos)            (Fila Única: Huey)
                                                                    │
                                                                    ▼
                                                          [ Worker Huey ]
@@ -63,7 +63,7 @@ A plataforma automatiza todo o pipeline de pós-produção: transcrição de áu
 
 ---
 
-### Opção 1: Execução com Docker (Recomendada para Produção)
+### Opção 1: Execução com Docker (Produção)
 
 1. **Clone o repositório:**
    ```bash
@@ -76,22 +76,35 @@ A plataforma automatiza todo o pipeline de pós-produção: transcrição de áu
    ```bash
    cp .env.example .env
    ```
-   > No Windows (PowerShell), você pode executar `powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1` para gerar chaves criptográficas fortes e criar as pastas persistentes automaticamente.
+   > No Windows (PowerShell), você pode executar `powershell -ExecutionPolicy Bypass -File scripts\setup-prod.ps1` para gerar chaves criptográficas fortes e criar as pastas persistentes (`D:\docker-data\clipmaker\{videos,cache,logs,redis}`) automaticamente.
 
 3. **Inicie os containers:**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d --build
-   ```
+   - **Modo Padrão em CPU (sem GPU dedicada):**
+     ```bash
+     docker compose -f docker-compose.prod.yml up -d --build
+     ```
+   - **Modo com Aceleração por GPU NVIDIA (CUDA + NVENC):**
+     ```bash
+     docker compose -f docker-compose.prod.yml -f docker-compose.gpu.yml up -d --build
+     ```
 
-4. **Acesse a aplicação:**
-   - Web: [http://localhost](http://localhost)
-   - Verificação de Saúde da API: [http://localhost/api/health](http://localhost/api/health)
+4. **Acesse a aplicação e portas:**
+   - **Frontend e API (Nginx):** [http://localhost](http://localhost) (porta **80**, com entrega acelerada `X-Accel-Redirect` em `/internal_videos/`).
+   - **Saúde da Aplicação:** [http://localhost/api/health](http://localhost/api/health)
+   - **Configurações e Limites Dinâmicos:** [http://localhost/api/config](http://localhost/api/config) (fornece tamanho máximo de upload e duração permitida ao frontend).
+
+5. **Versionamento e Invalidação de Cache (Assets Frontend):**
+   O Nginx aplica cache longo (1 ano) em arquivos `.css` e `.js`. Ao alterar o frontend, execute:
+   ```bash
+   python scripts/version_assets.py
+   ```
+   O script injeta automaticamente hashes do conteúdo (`?v=<hash>`) no `index.html`.
 
 ---
 
 ### Opção 2: Desenvolvimento Local (sem Docker)
 
-O backend possui suporte a fallback para SQLite em desenvolvimento, permitindo testar e desenvolver rapidamente sem precisar subir PostgreSQL ou Redis:
+O backend possui suporte a fallback para SQLite exclusivamente em desenvolvimento:
 
 1. **Crie e ative um ambiente virtual:**
    ```bash
@@ -108,19 +121,22 @@ O backend possui suporte a fallback para SQLite em desenvolvimento, permitindo t
    pip install -r requirements-dev.txt
    ```
 
-3. **Configure o `.env`:**
-   ```bash
-   cp .env.example .env
-   # Preencha a GEMINI_API_KEY no arquivo .env
+3. **Configure o `.env` para fallback:**
+   ```dotenv
+   ENVIRONMENT=development
+   ALLOW_SQLITE_FALLBACK=true
+   GEMINI_API_KEY=sua_chave_aqui
+   SECRET_KEY=sua_chave_secreta_local
    ```
+   > **Atenção:** Se `ENVIRONMENT=production` ou se `ALLOW_SQLITE_FALLBACK` não for `true`, o fallback é estritamente bloqueado para evitar uso inadvertido de SQLite em produção.
 
 4. **Inicie a API:**
    ```bash
    uvicorn backend.app.main:app --reload --port 8000
    ```
-   > Em modo local, acesse [http://localhost:8000](http://localhost:8000). O FastAPI serve a interface estática automaticamente.
+   > Em modo local direto, acesse [http://localhost:8000](http://localhost:8000). O FastAPI serve a interface estática automaticamente.
 
-5. **(Opcional) Inicie o worker de processamento:**
+5. **(Opcional) Inicie o worker de processamento na fila única:**
    ```bash
    huey_consumer backend.app.worker.worker.huey -w 1 -k thread
    ```
@@ -129,10 +145,10 @@ O backend possui suporte a fallback para SQLite em desenvolvimento, permitindo t
 
 ## 🧪 Testes Automatizados
 
-A suíte de testes valida rotas da API, autenticação, persistência e verificações de segurança:
+A suíte de testes valida rotas da API, autenticação JWT, integridade de tarefas, watchdog, proteção SSRF, dimensionamento de corte e versionamento de assets:
 
 ```bash
-pytest -v
+python -m pytest -v
 ```
 
 ---
@@ -144,10 +160,21 @@ pytest -v
 | `GEMINI_API_KEY` | Chave de API do Google Gemini (análise e ranqueamento de clipes) | Obrigatório |
 | `SECRET_KEY` | Chave secreta para assinatura dos tokens JWT | Obrigatório |
 | `ENVIRONMENT` | Ambiente de execução (`production` ou `development`) | `production` |
+| `ALLOW_SQLITE_FALLBACK` | Permite banco SQLite local se Postgres/Redis indisponíveis (apenas em dev) | `false` |
 | `DOMAIN` | Domínio configurado para o proxy Nginx | `localhost` |
-| `DATA_ROOT` | Caminho de armazenamento persistente para vídeos e cache | `D:/docker-data/clipmaker` |
+| `DATA_ROOT` | Caminho de armazenamento persistente para cache e Redis | `D:/docker-data/clipmaker` |
 | `POSTGRES_USER` / `PASSWORD` | Credenciais de acesso ao PostgreSQL | `clipmaker` |
 | `REDIS_PASSWORD` | Senha de autenticação do Redis | Obrigatório |
+| `WORKER_CPUS` | Cota de núcleos de CPU para o container worker | `4.0` |
+| `WORKER_MEM_LIMIT` | Limite de memória RAM para o container worker | `6g` |
+| `WHISPER_MODEL` | Modelo Whisper (`small` para GPU, `base` para CPU, `tiny`) | `small` (GPU) / `base` (CPU) |
+| `FFMPEG_PRESET` | Preset de encoding FFmpeg (`ultrafast` em CPU; `p4` em NVENC) | `ultrafast` |
+| `FFMPEG_CRF` | Fator de taxa constante / qualidade visual do FFmpeg | `23` |
+| `RENDER_PARALLELISM` | Paralelismo de renderização de clipes | `2` |
+| `MAX_CONCURRENT_JOBS_PER_USER` | Máximo de processamentos simultâneos por usuário | `2` |
+| `PROJECT_STALE_MINUTES` | Limite de inatividade para watchdog marcar projeto como FAILED | `60` |
+| `JOB_TIMEOUT_MINUTES` | Tempo limite máximo de execução de um job | `120` |
+| `USE_NGINX_ACCEL` | Ativa envio acelerado de vídeo via cabeçalho `X-Accel-Redirect` | `true` em prod, `false` local |
 
 ---
 
