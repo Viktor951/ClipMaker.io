@@ -114,8 +114,7 @@ services:
   # Este é o container mais pesado: roda Whisper (IA), OpenCV (face tracking)
   # e FFmpeg (render). O limite de 2GB é o mínimo viável.
   # Escala de workers: docker compose up -d --scale worker=2
-  # Threads por worker: alterar -w <N> -k thread
-  # Filas separadas (opcional): huey_consumer backend.app.worker.worker.huey_ingest / huey_render
+  # Fila unificada: todas as tarefas são processadas por backend.app.worker.worker.huey
   worker:
     build: .
     # -w 1: Um único worker process. CRÍTICO para RAM.

@@ -42,15 +42,15 @@ else:
 
 if _use_redis:
     huey = RedisHuey('clipmaker_tasks', url=redis_url)
-    huey_ingest = RedisHuey('clipmaker_ingest', url=redis_url)
-    huey_render = RedisHuey('clipmaker_render', url=redis_url)
-    logger.info("Filas Huey (clipmaker_tasks, clipmaker_ingest, clipmaker_render) inicializadas com Redis com sucesso.")
+    huey_ingest = huey
+    huey_render = huey
+    logger.info("Fila Huey unificada (clipmaker_tasks) inicializada com Redis com sucesso.")
 else:
     queue_dir = Path(__file__).resolve().parent.parent.parent.parent
     huey = SqliteHuey('clipmaker_tasks', filename=str(queue_dir / "huey_queue.db"))
-    huey_ingest = SqliteHuey('clipmaker_ingest', filename=str(queue_dir / "huey_ingest.db"))
-    huey_render = SqliteHuey('clipmaker_render', filename=str(queue_dir / "huey_render.db"))
-    logger.warning("[AVISO] Filas Huey inicializadas com SqliteHuey local.")
+    huey_ingest = huey
+    huey_render = huey
+    logger.warning("[AVISO] Fila Huey unificada inicializada com SqliteHuey local.")
 
 
 def _cleanup_runtime():
@@ -65,7 +65,6 @@ def _cleanup_runtime():
         pass
 
 
-@huey_ingest.task()
 @huey.task()
 def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspect_ratio: str = "9:16"):
     """
@@ -148,7 +147,6 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         _cleanup_runtime()
 
 
-@huey_ingest.task()
 @huey.task()
 def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_ratio: str = "9:16"):
     import time
@@ -191,7 +189,6 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
             logger.info(f"Vídeo original preservado para edições: {input_path}")
 
 
-@huey_render.task()
 @huey.task()
 def re_render_clip_task(clip_id: str, payload_dict: dict):
     from backend.app.core.loop import run_sync

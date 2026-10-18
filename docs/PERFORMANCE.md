@@ -345,7 +345,7 @@ Nesta etapa, o foco foi a escalabilidade da API, estabilidade do event loop ass�
 ### 1. Desbloqueio Completo do Event Loop Async
 - **Diagnóstico do Gargalo:** O endpoint `/upload-url` executava `yt-dlp` com `subprocess.run` (com timeout de até 30 minutos) diretamente dentro da corrotina assíncrona do FastAPI. Sob Uvicorn com 1 worker de CPU, qualquer importação por URL travava a thread principal da API, impossibilitando outros usuários de fazerem login, consultarem status ou baixarem clipes.
 - **Solução Implementada:** 
-  - Todo o ciclo de download e probe via `yt-dlp` foi transferido para a task Huey `download_and_process_url_task` na fila `huey_ingest`.
+  - Todo o ciclo de download e probe via `yt-dlp` foi transferido para a task assíncrona `download_and_process_url_task` na fila `huey`.
   - A rota agora apenas valida a URL com proteção SSRF contra IPs internos, cria o projeto com status inicial `DOWNLOADING` e responde imediatamente (**latência < 15ms**).
   - No upload de arquivos locais (`/upload-and-process`), a escrita dos blocos em disco e a análise de metadados (`get_video_info` / `ffprobe`) foram descarregadas para o threadpool interno via `asyncio.to_thread`.
   - O status `DOWNLOADING` foi integrado ao frontend como a primeira etapa visual ("📥 Baixando mídia"), garantindo transparência ao usuário.
@@ -369,11 +369,9 @@ Nesta etapa, o foco foi a escalabilidade da API, estabilidade do event loop ass�
 - **Proteção do Re-render:** Endpoint de re-renderização protegido com rate limit explícito de `@limiter.limit("10/minute")`.
 - **Armazenamento de Rate Limit no Redis:** O backend de storage do `slowapi` foi configurado para apontar diretamente para a instância central do Redis (`storage_uri=settings.REDIS_URL`), persistindo o controle de taxa de requisições de forma compartilhada e resiliente.
 
-### 5. Filas Especializadas do Huey e Escalabilidade
-- Criadas filas dedicadas no `worker.py`:
-  - `huey_ingest`: Tarefas de I/O de rede e transcrição de áudio (`download_and_process_url_task`, `process_video_task`).
-  - `huey_render`: Tarefas intensivas de GPU e codificação FFmpeg (`re_render_clip_task`).
-  - `huey`: Fila mestre unificada mantida para balanceamento geral.
+### 5. Fila Unificada do Huey e Escalabilidade
+- Fila mestre unificada `huey` (`clipmaker_tasks`) configurada no `worker.py` para todas as tarefas assíncronas (`download_and_process_url_task`, `process_video_task`, `re_render_clip_task`).
+- Consumidor único no Compose executando `huey_consumer backend.app.worker.worker.huey -w 1 -k thread`, eliminando o risco de tarefas perdidas em filas sem consumidores ativos.
 - Documentado no Compose o procedimento operacional para subir múltiplas réplicas do worker (`docker compose up -d --scale worker=N`) e configuração de threads por processo (`-w N -k thread`).
 
 ### 6. Fila Visível e Estimativa Dinâmica de Tempo (ETA)
@@ -410,5 +408,29 @@ Medições realizadas dentro do container worker (`clipmaker-prod-worker-1`), co
 - Rodada 3: 72.25s (Whisper warm cache: 11.80s)
 - **Mediana: 72.25s (Variação: 71.75s – 83.01s)**
 
+---
 
+## 12. Validação Ponta a Ponta com Fila Huey Unificada e Redis Real (Etapa A)
 
+Após a remoção dos decoradores duplicados no `worker.py` e consolidação na fila unificada `huey` (`clipmaker_tasks`), foi realizada a validação ponta a ponta em ambiente de produção conteinerizado (`docker-compose.prod.yml`) com Redis real e GPU NVIDIA NVENC:
+
+- **Endpoint Acionado:** `POST /api/videos/upload-and-process`
+- **Vídeo de Teste:** Full HD 1080p, 20.0s de duração, 12.8 MB
+- **Despacho e Consumo pelo Redis:**
+  - `project_id = b488fed5-c853-4df6-805f-19a68e31829d`
+  - Log do Worker: `Executing backend.app.worker.worker.process_video_task: c3e709f2-140c-48a8-ab61-241aa0cc43c2`
+- **Fases Observadas nos Logs do Worker:**
+  - `ffprobe`: 0.26s
+  - `Whisper (small, float16 GPU)`: 13.45s (4 segmentos de fala obtidos)
+  - `Google Gemini LLM`: análise semântica e identificação dos momentos virais
+  - `Face Tracking & Render NVENC (5 clipes)`: renderizados em passe único (2.5s a 3.8s por clipe)
+  - `Miniaturas`: geradas e persistidas no banco
+- **Evolução de Status no Polling da API:**
+  - `PENDING` (7.3s)
+  - `TRANSCRIBING` (9.8s)
+  - `ANALYZING` (23.8s)
+  - `RENDERING` (128.5s — clipes 1, 2, 3...)
+  - `READY` (140.5s — 5 clipes concluídos)
+- **Tempo Total Medido:**
+  - **Tempo de execução da tarefa no worker Huey:** **135.24s**
+  - **Tempo total ponta a ponta na API (do upload ao status READY):** **140.55s**
