@@ -106,6 +106,18 @@ def get_video_info(input_path: str) -> tuple:
 # Face Tracking — otimizado para baixa RAM
 # ============================================================
 
+def _find_face_cascade_path() -> str:
+    """Procura o XML de Haar cascade em caminhos padrão do OpenCV e locais do projeto."""
+    candidates = []
+    if hasattr(cv2, 'data') and hasattr(cv2.data, 'haarcascades'):
+        candidates.append(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    candidates.append(os.path.join(os.path.dirname(__file__), 'haarcascade_frontalface_default.xml'))
+    candidates.append('/opt/venv/lib/python3.11/site-packages/cv2/data/haarcascade_frontalface_default.xml')
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return ""
+
 def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: float, alpha: float = 0.15, max_frames: int = 300) -> int:
     """
     Detecta o centro do rosto predominante no trecho de vídeo.
@@ -117,9 +129,13 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
     """
     import tempfile
 
-    cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    if not os.path.exists(cascade_path):
+    cascade_path = _find_face_cascade_path()
+    if not cascade_path:
         logger.info("Face tracking: classificador Haar cascade não encontrado. Usando centro padrão (otimização de tempo).")
+        return 960
+
+    if not hasattr(cv2, 'CascadeClassifier'):
+        logger.info("Face tracking: cv2.CascadeClassifier indisponível neste ambiente OpenCV. Usando centro padrão.")
         return 960
 
     logger.info(f"Face tracking: extraindo sub-clipe temporário {start_sec:.1f}s -> {end_sec:.1f}s...")
@@ -159,11 +175,6 @@ def calculate_smooth_face_center(video_path: str, start_sec: float, end_sec: flo
         # Reduzir para 480px de largura economiza ~75% de RAM por frame
         target_process_width = 480
         scale_factor = target_process_width / total_width if total_width > target_process_width else 1.0
-
-        cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        if not os.path.exists(cascade_path):
-            logger.warning("Haar cascade file não encontrado. Usando centro padrão.")
-            return current_center_x
 
         face_cascade = cv2.CascadeClassifier(cascade_path)
         current_frame = 0

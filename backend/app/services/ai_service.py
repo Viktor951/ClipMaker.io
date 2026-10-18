@@ -111,13 +111,33 @@ def format_transcript_from_segments(segments: list) -> str:
             parts.append(f"[{start:.1f}s - {end:.1f}s] {text}")
     return "\n".join(parts)
 
+_LAST_LLM_META = {
+    "model": None,
+    "attempts": 0,
+    "had_429": False,
+    "source": "none"
+}
+
+def get_last_llm_meta() -> dict:
+    """Retorna os metadados da última execução do LLM para auditoria e benchmark."""
+    return dict(_LAST_LLM_META)
+
 def get_viral_clips_from_llm(transcript_text: str, duration: float) -> list:
     """Envia o transcript para o Gemini e retorna a lista de clipes estruturada."""
+    global _LAST_LLM_META
+    _LAST_LLM_META = {
+        "model": None,
+        "attempts": 0,
+        "had_429": False,
+        "source": "fallback"
+    }
+    
     logger.info("Enviando transcrição para análise do LLM (Gemini)...")
     
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "COLOQUE_SUA_CHAVE_AQUI":
         logger.error("A chave GEMINI_API_KEY não foi encontrada no arquivo .env!")
+        logger.info("LLM RESULTADO: modelo=None, tentativas=0, 429=False, fonte=fallback_matematico (sem api_key)")
         return _fallback_clip_boundaries(duration)
     
     # Lazy import — evita carregar gRPC/protobuf na RAM se não for necessário
@@ -152,9 +172,12 @@ TRANSCRIÇÃO DO VÍDEO:
     
     # Modelos disponíveis e verificados com a chave PRO
     models_to_try = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-pro-latest"]
+    total_attempts = 0
+    had_429 = False
     
     for model_name in models_to_try:
         for attempt in range(3):
+            total_attempts += 1
             try:
                 logger.info(f"Tentativa {attempt+1} com modelo: {model_name}")
                 model = genai.GenerativeModel(model_name)
@@ -190,12 +213,25 @@ TRANSCRIÇÃO DO VÍDEO:
                         "viral_score": vs
                     })
                     
-                logger.info(f"{len(clip_boundaries)} clipe(s) retornado(s) pelo LLM ({model_name}).")
+                _LAST_LLM_META = {
+                    "model": model_name,
+                    "attempts": total_attempts,
+                    "had_429": had_429,
+                    "source": "gemini"
+                }
+                logger.info(
+                    f"LLM RESULTADO: modelo={model_name}, tentativas={total_attempts}, "
+                    f"429={had_429}, fonte=Gemini ({len(clip_boundaries)} clipes gerados)"
+                )
                 return clip_boundaries
                 
             except Exception as e:
                 err_str = str(e)
-                logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
+                if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
+                    had_429 = True
+                    logger.warning(f"LLM 429 Quota Exceeded com {model_name} (tentativa {attempt+1}/3)")
+                else:
+                    logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
                 
                 if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
                     wait_time = (attempt + 1) * 10
@@ -209,7 +245,16 @@ TRANSCRIÇÃO DO VÍDEO:
                     
                 time.sleep(5)
     
-    logger.error("Todos os modelos Gemini falharam. Usando fallback matemático.")
+    _LAST_LLM_META = {
+        "model": "nenhum (todos falharam)",
+        "attempts": total_attempts,
+        "had_429": had_429,
+        "source": "fallback_matematico"
+    }
+    logger.error(
+        f"LLM RESULTADO: modelo=nenhum, tentativas={total_attempts}, "
+        f"429={had_429}, fonte=fallback_matematico (acionado após esgotar retentativas)"
+    )
     return _fallback_clip_boundaries(duration)
 
 def _fallback_clip_boundaries(duration: float) -> list:

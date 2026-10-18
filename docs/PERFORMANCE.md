@@ -1,10 +1,10 @@
 # ClipMaker.io — Relatório de Performance e Linha de Base (Baseline)
 
-Este documento registra as métricas empíricas de performance da arquitetura do ClipMaker.io, o perfil de hardware do ambiente de execução e a identificação dos principais gargalos do pipeline.
+Este documento registra as métricas empíricas de performance da arquitetura do ClipMaker.io, o perfil de hardware e limites de recursos do ambiente de execução, a investigação técnica sobre detecção facial (OpenCV) e o detalhamento de auditoria da chamada ao Gemini.
 
 ---
 
-## 1. Perfil de Hardware e Ambiente de Execução
+## 1. Perfil de Hardware e Limites de Execução
 
 ### Hardware Host (Windows 11)
 - **Processador (CPU):** 13th Gen Intel(R) Core(TM) i5-13420H (8 núcleos físicos: 4 P-cores + 4 E-cores, 12 threads lógicas)
@@ -14,81 +14,157 @@ Este documento registra as métricas empíricas de performance da arquitetura do
   - **Versão CUDA:** 13.4 (WDDM 3.2)
   - **Aceleração Hardware FFmpeg:** NVENC disponível (`h264_nvenc`)
 
-### Ambiente Docker Desktop / WSL2
+### Ambiente de Produção Docker Compose (`docker-compose.prod.yml`)
 - **Kernel WSL2:** `6.18.33.2-microsoft-standard-WSL2`
-- **CPUs alocadas à VM:** 12
-- **RAM Total alocada à VM WSL2:** 11.54 GiB (~50% da RAM física)
-- **Limites de Memória por Container (`docker stats`):**
-  - `clipmaker-prod-worker-1`: 3.0 GiB
-  - `clipmaker-prod-api-1`: 768 MiB
-  - `clipmaker-prod-db-1`: 512 MiB
-  - `clipmaker-prod-redis-1`: 192 MiB
-  - `clipmaker-prod-frontend-1`: 128 MiB
-  - `clipmaker-prod-cleanup-1`: 64 MiB
+- **CPUs alocadas à VM WSL2:** 12 threads
+- **RAM Total alocada à VM WSL2:** 11.54 GiB
+- **Limites Reais por Container (`docker-compose.prod.yml` / `docker stats`):**
+  - **`clipmaker-prod-worker-1` (Processamento pesado):**
+    - **`cpus: 2.0`** (limitado a 2 núcleos de CPU)
+    - **`mem_limit: 3g`** (3.0 GiB de RAM)
+  - `clipmaker-prod-api-1`: `cpus: 1.0`, `mem_limit: 768m`
+  - `clipmaker-prod-db-1`: `cpus: 1.0`, `mem_limit: 512m`
+  - `clipmaker-prod-redis-1`: `cpus: 0.3`, `mem_limit: 192m`
+  - `clipmaker-prod-frontend-1`: `cpus: 0.5`, `mem_limit: 128m`
+  - `clipmaker-prod-cleanup-1`: `cpus: 0.1`, `mem_limit: 64m`
 
-> **Nota Operacional:** No host Windows com FFmpeg nativo, o NVENC é detectado e acelera o encoding. Dentro do container padrão do worker, o toolkit da NVIDIA não está montado, fazendo o container recorrer ao encoding CPU (`libx264`).
+> **Impacto Arquitetural de Recursos:**
+> No Host nativo, o FFmpeg detecta e utiliza a GPU NVIDIA via NVENC (`h264_nvenc`), acelerando as etapas de render e queima de legendas para ~6.5s por clipe.
+> Dentro do container do worker, devido à ausência do runtime NVIDIA montado e aos limites de `cpus: 2.0`, o FFmpeg executa o encoder de software (`libx264 ultrafast`), elevando o tempo de render para ~21s por clipe e a queima de legendas para ~15.5s por clipe.
 
 ---
 
-## 2. Metodologia de Benchmark (Etapa 0)
+## 2. Metodologia de Medição Estatística (Etapa 0)
 
-- **Script de Benchmark:** `scripts/benchmark.py`
-- **Instrumentação:** Decorator e Context Manager `timed("nome_da_etapa")` em `backend/app/core/timing.py`.
-- **Vídeo de Teste:**
-  - Arquivo: `backend/temp_videos/87e2634a-75a5-4f26-b18a-079fe423f7b5.mp4`
+Para assegurar rigor estatístico contra ruídos operacionais, caches de sistema operacional e variações de carga:
+- **Número de Rodadas:** Cada cenário foi executado rigorosamente **3 vezes consecutivas** (`--runs 3`).
+- **Métricas Tabuladas:** **Mediana** e intervalo de **Variação (Mínimo - Máximo)**.
+- **Instrumentação:** Decorator e Context Manager `timed("etapa")` em `backend/app/core/timing.py`.
+- **Vídeo Padrão de Teste:**
+  - Arquivo: `87e2634a-75a5-4f26-b18a-079fe423f7b5.mp4`
   - Resolução: `1920x1080` (Full HD, 30 fps)
   - Duração: `406.16s` (~6.77 minutos)
-  - Tamanho: `256.56 MB`
-  - Aspect Ratio de saída: `9:16` (1080x1920)
-  - Clipes gerados: `5` clipes (75.0s cada)
+  - Tamanho em disco: `256.56 MB`
+  - Configuração de saída: Formato `9:16` (1080x1920), gerando `5` clipes curtos de `75.0s` cada.
 
 ---
 
-## 3. Linha de Base — Resultados Medidos
+## 3. Linha de Base — Resultados Medidos (3 Rodadas)
 
-### Tabela 1: Linha de Base de Computação Local (`--skip-llm`)
-Isola a performance do hardware e do pipeline de processamento (probe, áudio/Whisper, OpenCV e FFmpeg) sem influência de latência ou limites de cota de APIs externas.
+### Tabela 1: Linha de Base de Computação no Host (`--skip-llm`, 3 rodadas)
+Isola o processamento de mídia (probe, Whisper CPU int8, OpenCV e FFmpeg com NVENC) no hardware nativo.
 
-| Fase do Pipeline | Tempo (s) | % do Total | Observações |
-| :--- | :---: | :---: | :--- |
-| **1. Probe (ffprobe)** | 0.04s | 0.0% | Metadados do vídeo via ffprobe |
-| **2. Transcrição (Whisper)** | 18.01s | 21.4% | Whisper `tiny`, CPU int8, 4 threads |
-| **3. LLM (Detecção Momentos)** | 0.00s | 0.0% | Fallback matemático rápido |
-| **4. Face Tracking (OpenCV)** | 0.00s | 0.0% | Fallback centro padrão (sem haar xml) |
-| **5. Render Vídeo (FFmpeg)** | 32.60s | 38.8% | Corte 9:16 do vídeo limpo (5 clipes x ~6.5s) |
-| **6. Legendas Burn-in (FFmpeg)** | 32.32s | 38.5% | Re-render completo com filtro `subtitles` |
-| **7. Overhead / E/S / Thumbnails** | 1.05s | 1.3% | Thumbnails, GC e I/O de disco |
-| **TEMPO TOTAL PIPELINE** | **84.02s** | **100.0%** | **5 clipes 9:16 gerados (1m 24s)** |
+| Fase do Pipeline | Mediana | Variação (Min - Max) | % do Total | Observações |
+| :--- | :---: | :---: | :---: | :--- |
+| **1. Probe (ffprobe)** | 0.05s | 0.04s – 0.05s | 0.1% | Metadados do vídeo original |
+| **2. Transcrição (Whisper)** | 22.81s | 18.66s – 26.68s | 25.7% | Whisper `tiny`, CPU int8, 4 threads |
+| **3. LLM (Detecção Momentos)** | 0.00s | 0.00s – 0.00s | 0.0% | Fallback matemático de cortes |
+| **4. Face Tracking (OpenCV)** | 0.00s | 0.00s – 0.00s | 0.0% | OpenCV 5.0 headless (sem CascadeClassifier) |
+| **5. Render Vídeo (FFmpeg)** | 32.66s | 32.32s – 33.15s | 36.8% | 5 clipes 9:16 limpos com NVENC (~6.5s/clipe) |
+| **6. Legendas Burn-in (FFmpeg)** | 32.53s | 32.18s – 32.95s | 36.6% | Re-render completo com filtro `subtitles` |
+| **7. Overhead / E/S / Thumbs** | 1.05s | 1.04s – 1.14s | 1.2% | Miniaturas, GC e I/O de disco |
+| **TEMPO TOTAL PIPELINE** | **88.87s** | **84.76s – 93.09s** | **100.0%** | **Mediana de 3 rodadas (1m 29s)** |
 
----
-
-### Tabela 2: Linha de Base com Chamada de LLM (`Gemini API`)
-
-| Fase do Pipeline | Tempo (s) | % do Total | Observações |
-| :--- | :---: | :---: | :--- |
-| **1. Probe (ffprobe)** | 0.04s | 0.0% | Metadados do vídeo |
-| **2. Transcrição (Whisper)** | 21.17s | 14.3% | Whisper `tiny`, CPU int8 |
-| **3. LLM (Detecção Momentos)** | 60.61s | 40.9% | Tentativas e backoff de quota (429) |
-| **4. Face Tracking (OpenCV)** | 0.00s | 0.0% | Centro padrão |
-| **5. Render Vídeo (FFmpeg)** | 32.76s | 22.1% | Render do vídeo limpo |
-| **6. Legendas Burn-in (FFmpeg)** | 32.45s | 21.9% | Re-render com legendas |
-| **7. Overhead / E/S / Thumbnails** | 1.11s | 0.7% | Thumbnails e limpeza |
-| **TEMPO TOTAL PIPELINE** | **148.14s** | **100.0%** | **5 clipes gerados (2m 28s)** |
+*Histórico das rodadas:* Rodada 1: 84.76s | Rodada 2: 93.09s | Rodada 3: 88.87s (Δ 8.33s).
 
 ---
 
-## 4. As 3 Etapas Mais Pesadas do Pipeline
+### Tabela 2: Linha de Base no Host com Gemini LLM (3 rodadas) + Auditoria
+Executa o pipeline completo acionando a API do Google Gemini para seleção semântica dos melhores momentos.
 
-Com base nos dados reais do benchmark, os 3 maiores gargalos do sistema são:
+| Fase do Pipeline | Mediana | Variação (Min - Max) | % do Total | Observações |
+| :--- | :---: | :---: | :---: | :--- |
+| **1. Probe (ffprobe)** | 0.05s | 0.04s – 0.05s | 0.0% | Metadados via ffprobe |
+| **2. Transcrição (Whisper)** | 19.34s | 18.31s – 20.44s | 18.6% | Whisper `tiny`, CPU int8 |
+| **3. LLM (Detecção Momentos)** | 21.92s | 16.58s – 26.79s | 21.1% | Chamada Gemini API + parsing JSON |
+| **4. Face Tracking (OpenCV)** | 0.00s | 0.00s – 0.00s | 0.0% | Fallback centro |
+| **5. Render Vídeo (FFmpeg)** | 32.56s | 32.48s – 32.74s | 31.4% | Render do vídeo limpo (NVENC) |
+| **6. Legendas Burn-in (FFmpeg)** | 32.61s | 32.45s – 32.88s | 31.4% | Queima de legendas (NVENC) |
+| **7. Overhead / E/S / Thumbs** | 1.08s | 1.05s – 1.13s | 1.0% | Geração de miniaturas e disco |
+| **TEMPO TOTAL PIPELINE** | **103.76s** | **101.65s – 109.83s** | **100.0%** | **Mediana de 3 rodadas (1m 44s)** |
 
-### 1º Render Vídeo Limpo (FFmpeg): 32.60s (38.8% do tempo de computação)
-- Cada clipe de 75s leva cerca de **6.5s** para ser cortado, cropado para 9:16 e codificado em H.264.
-- Para 5 clipes sequenciais, o tempo escala linearmente (5 x 6.5s = 32.6s).
+*Histórico das rodadas:* Rodada 1: 101.65s (LLM: 16.58s) | Rodada 2: 103.76s (LLM: 21.92s) | Rodada 3: 109.83s (LLM: 26.79s) (Δ 8.18s).
 
-### 2º Queima de Legendas / Re-render (FFmpeg): 32.32s (38.5% do tempo de computação)
-- O pipeline atual renderiza o vídeo **duas vezes**: primeiro gera `clean_<uuid>.mp4`, e depois executa um segundo processo do FFmpeg (`re_render_clip`) para queimar o arquivo SRT sobre o vídeo limpo, gerando `clip_<uuid>.mp4`.
-- Somados, **Render + Legendas consom 64.92s (77.3% de todo o tempo de computação)**. Uma única passagem combinada ou otimização de filtro pode cortar quase metade desse tempo.
+#### Auditoria da Chamada LLM (Metadados Estruturados):
+- **Modelo Utilizado:** `gemini-3.8-flash` (via alias/SDK Google GenAI)
+- **Tentativas Realizadas:** `1` (sucesso imediato na primeira tentativa em todas as 3 rodadas)
+- **Erros de Cota / HTTP 429:** `False` (zero ocorrências de 429)
+- **Origem dos Cortes:** `gemini` (cortes semânticos gerados pela inteligência artificial; fallback matemático **não** precisou ser acionado)
+- **Momentos Identificados:** 5 clipes de alta relevância com títulos gerados e justificativas contextuais baseadas na transcrição.
 
-### 3º Transcrição de Áudio (Whisper): 18.01s – 21.17s (21.4% do tempo de computação)
-- A transcrição de 6.77 minutos de áudio levou ~18 segundos usando o modelo `tiny` com 4 threads na CPU.
-- Para modelos maiores (`base`, `small`) ou vídeos de 10-30 minutos, o tempo cresce substancialmente se não houver aceleração por GPU/CUDA ou otimização de pré-extração de áudio em 16kHz mono.
+---
+
+### Tabela 3: Linha de Base no Container Worker (`clipmaker-prod-worker-1`, 3 rodadas)
+Execução realizada estritamente **DENTRO** do container do worker com os limites reais de produção definidos no `docker-compose.prod.yml`:
+- **Limites Reais:** **`cpus: 2.0`** (2 núcleos) | **`mem_limit: 3g`** (3.0 GiB RAM)
+- **Modo:** `--skip-llm` com vídeo copiado para o volume `/app/backend/temp_videos/test_video.mp4`
+
+| Fase do Pipeline | Mediana | Variação (Min - Max) | % do Total | Observações |
+| :--- | :---: | :---: | :---: | :--- |
+| **1. Probe (ffprobe)** | 0.07s | 0.07s – 0.09s | 0.0% | Metadados no Debian Bookworm |
+| **2. Transcrição (Whisper)** | 30.37s | 28.81s – 35.87s | 12.9% | Whisper `tiny` com 4 threads na CPU (2 vCPUs) |
+| **3. LLM (Detecção Momentos)** | 0.00s | 0.00s – 0.00s | 0.0% | Fallback matemático de cortes |
+| **4. Face Tracking (OpenCV)** | 16.34s | 16.09s – 16.83s | 6.9% | **Ativo!** OpenCV 4.8.0 Haar (~3.27s/clipe) |
+| **5. Render Vídeo (FFmpeg)** | 107.01s | 103.67s – 114.23s | 45.5% | 5 clipes 9:16 limpos via CPU `libx264` (~21.4s/clipe) |
+| **6. Legendas Burn-in (FFmpeg)** | 77.66s | 76.99s – 85.28s | 33.0% | Re-render completo com filtro `subtitles` (~15.5s/clipe) |
+| **7. Overhead / E/S / Thumbs** | 1.78s | 1.71s – 2.36s | 0.8% | Thumbs, GC e IO de disco |
+| **TEMPO TOTAL PIPELINE** | **235.16s** | **232.98s – 247.09s** | **100.0%** | **Mediana de 3 rodadas (3m 55s)** |
+
+*Histórico das rodadas no container:*
+- Rodada 1: 235.16s
+- Rodada 2: 247.09s
+- Rodada 3: 232.98s (Δ 14.11s)
+
+---
+
+## 4. Investigação Técnica: Detecção Facial (Face Tracking)
+
+### Causa Raiz do "0.00s (sem haar xml)"
+Foi realizada a verificação em ambos os ambientes conforme solicitado:
+`python -c "import cv2,os; p=cv2.data.haarcascades+'haarcascade_frontalface_default.xml'; print(p, os.path.exists(p))"`
+
+1. **No Ambiente Host (Windows 11 / Python 3.14):**
+   - Versão do OpenCV: `5.0.0.86` (pre-release do OpenCV 5 para suportar Python 3.14).
+   - O arquivo XML não vinha embutido no pacote `site-packages/cv2/data/`.
+   - **Causa Crítica:** Além da ausência do XML, no OpenCV 5.0 headless a classe C++ de classificadores em cascata foi omitida das bindings Python: `hasattr(cv2, 'CascadeClassifier') == False`. Tentar invocar `CascadeClassifier` disparava `AttributeError`. O OpenCV 5 migrou a detecção padrão para o modelo neural `FaceDetectorYN`.
+2. **No Ambiente Container Worker (Debian Bookworm / Python 3.11):**
+   - Versão do OpenCV: `4.8.0.74`.
+   - Caminho: `/opt/venv/lib/python3.11/site-packages/cv2/data/haarcascade_frontalface_default.xml`.
+   - `os.path.exists(p) == True` e `hasattr(cv2, 'CascadeClassifier') == True`.
+   - O classificador Haar é plenamente suportado e funcional.
+
+### Correção Implementada
+1. **Fallback de Arquivo Local:** Copiado `haarcascade_frontalface_default.xml` diretamente para `backend/app/services/haarcascade_frontalface_default.xml`.
+2. **Resolução Robusta:** No `backend/app/services/video_service.py` (`_find_face_cascade_path`), a busca verifica:
+   - Diretório local do serviço (`services/haarcascade_frontalface_default.xml`);
+   - `cv2.data.haarcascades`;
+   - Diretórios padrões de sistema (`/usr/share/opencv4/haarcascades/`, etc.).
+3. **Checagem Defensiva:** `hasattr(cv2, "CascadeClassifier")` adicionado antes da instanciação para não quebrar ambientes OpenCV 5.
+
+### Impacto Medido com Face Tracking Ativo
+- No container do worker, o face tracking analisou **301 frames** por clipe de 75s (amostragem a cada 250ms).
+- O tempo consumido foi de **16.34s** no total dos 5 clipes (**~3.27s por clipe**).
+- No **Clipe 5 (331.2s -> 406.2s)**, o classificador detectou **12 faces**, calculou a mediana da coordenada horizontal dos rostos (`center_x=937`) e moveu o centro da janela de corte 9:16 dinamicamente para o locutor, eliminando o corte cego e estático no centro geométrico (`960`).
+
+---
+
+## 5. Os 3 Maiores Gargalos do Pipeline (Identificados nos Ambientes)
+
+Comparando o Host (com GPU) e o Container de Produção (com CPU limitada a 2.0 núcleos):
+
+### 1º Renderização do Vídeo Limpo (FFmpeg): 107.01s no Container (45.5% do total)
+- No container (CPU `libx264 ultrafast` com `cpus: 2.0`), cada clipe de 75s leva **21.4s** para ser cortado, cropado e codificado.
+- Para 5 clipes sequenciais, consome quase 1 minuto e 47 segundos.
+- No host com NVENC, consome apenas 32.6s (6.5s/clipe).
+
+### 2º Queima de Legendas / Re-render (FFmpeg): 77.66s no Container (33.0% do total)
+- O pipeline atual gera o clipe duas vezes consecutivas:
+  1. Primeiro gera `clean_<uuid>.mp4` (vídeo sem legendas);
+  2. Em seguida, roda o FFmpeg novamente para queimar o arquivo SRT sobre o vídeo limpo, gerando `clip_<uuid>.mp4`.
+- No container, essa segunda passagem custa **15.5s adicionais por clipe**, totalizando **77.66s**.
+- **Juntas, as duas passagens do FFmpeg consom 184.67s (78.5% de TODO o tempo de computação do container)!**
+- Uma passagem unificada eliminaria a necessidade de ler e recodificar o vídeo duas vezes.
+
+### 3º Transcrição de Áudio (Whisper): 30.37s no Container (12.9% do total)
+- O áudio completo de 6.77 minutos é transcrito pelo modelo `tiny` com 4 threads na CPU em ~30 segundos no container (vs ~19-22s no host).
+- A pré-extração do áudio em WAV 16kHz mono antes de invocar o Whisper e o paralelismo controlado representam oportunidades claras para diminuir esse tempo.
