@@ -177,6 +177,15 @@ class SqliteBackend:
                 createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY(projectId) REFERENCES projects(id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS job_metrics (
+                id TEXT PRIMARY KEY,
+                projectId TEXT,
+                videoDurationSec REAL NOT NULL,
+                totalProcessingSec REAL NOT NULL,
+                secPerMinute REAL NOT NULL,
+                createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(projectId) REFERENCES projects(id) ON DELETE SET NULL
+            );
         """)
         try:
             await self._conn.execute("ALTER TABLE clips ADD COLUMN wordsJson TEXT;")
@@ -204,6 +213,18 @@ class SqliteBackend:
             pass
         try:
             await self._conn.execute("ALTER TABLE transcriptions ADD COLUMN fileHash TEXT;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_user_status ON projects (userId, status);")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_status_created ON projects (status, createdAt);")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_job_metrics_created_at ON job_metrics (createdAt DESC);")
         except Exception:
             pass
         await self._conn.commit()
@@ -328,7 +349,8 @@ async def create_project(
     title: str,
     source_file_key: str,
     duration_sec: float,
-    source_url: str = None
+    source_url: str = None,
+    status: str = 'PENDING'
 ) -> str:
     if not _is_valid_uuid(user_id):
         raise ValueError(f"user_id inválido: {user_id}")
@@ -336,9 +358,26 @@ async def create_project(
     db = await get_backend()
     await db.execute(
         "INSERT INTO projects (id, userId, title, sourceUrl, sourceFileKey, durationSec, status) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        project_id, user_id, title, source_url, source_file_key, duration_sec, 'PENDING'
+        project_id, user_id, title, source_url, source_file_key, duration_sec, status
     )
     return project_id
+
+
+async def update_project_source(project_id: str, source_file_key: str, duration_sec: float, title: str = None):
+    """Atualiza arquivo fonte e duração do projeto após download assíncrono."""
+    if not _is_valid_uuid(project_id):
+        return
+    db = await get_backend()
+    if title:
+        await db.execute(
+            "UPDATE projects SET sourceFileKey = $1, durationSec = $2, title = $3 WHERE id = $4",
+            source_file_key, duration_sec, title, project_id
+        )
+    else:
+        await db.execute(
+            "UPDATE projects SET sourceFileKey = $1, durationSec = $2 WHERE id = $3",
+            source_file_key, duration_sec, project_id
+        )
 
 
 async def get_user_projects(user_id: str) -> List[Dict[str, Any]]:
@@ -592,3 +631,92 @@ async def update_clip_render_details(
 
 async def update_clip_words_and_style(clip_id: str, words_json: str, caption_config: str):
     return await update_clip_render_details(clip_id, words_json, caption_config, "9:16")
+
+
+async def get_clip_with_owner(clip_id: str) -> Optional[Dict[str, Any]]:
+    """Consulta otimizada com JOIN para download/stream sem carregar projeto inteiro nem parsear JSON."""
+    if not _is_valid_uuid(clip_id):
+        return None
+    db = await get_backend()
+    row = await db.fetchrow(
+        """SELECT c.id, c.projectId, c.renderedUrl, c.thumbnail_key, c.status, p.userId
+           FROM clips c
+           JOIN projects p ON c.projectId = p.id
+           WHERE c.id = $1""",
+        clip_id
+    )
+    if not row:
+        return None
+    cdict = dict(row)
+    cdict['renderedUrl'] = cdict.get('renderedurl') or cdict.get('renderedUrl') or ''
+    cdict['thumbnail_key'] = cdict.get('thumbnail_key') or cdict.get('thumbnailkey') or ''
+    cdict['userId'] = cdict.get('userid') or cdict.get('userId') or ''
+    return cdict
+
+
+async def count_active_projects_by_user(user_id: str) -> int:
+    """Conta projetos ativos em andamento para o usuário para limitar concorrência."""
+    if not _is_valid_uuid(user_id):
+        return 0
+    db = await get_backend()
+    row = await db.fetchrow(
+        """SELECT COUNT(*) as count FROM projects 
+           WHERE userId = $1 AND status IN ('PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')""",
+        user_id
+    )
+    return int(row["count"]) if row else 0
+
+
+async def get_project_queue_info(project_id: str) -> Dict[str, Any]:
+    """Calcula posição na fila e estimativa de tempo baseada na média móvel de processamento."""
+    if not _is_valid_uuid(project_id):
+        return {"queue_position": 1, "estimated_time_sec": 30}
+    db = await get_backend()
+    proj = await db.fetchrow("SELECT createdAt, durationSec, status FROM projects WHERE id = $1", project_id)
+    if not proj:
+        return {"queue_position": 1, "estimated_time_sec": 30}
+    
+    status = proj.get("status")
+    if status in ("READY", "COMPLETED", "FAILED"):
+        return {"queue_position": 0, "estimated_time_sec": 0}
+
+    created_at = proj.get("createdat") or proj.get("createdAt")
+    row_pos = await db.fetchrow(
+        """SELECT COUNT(*) as count FROM projects 
+           WHERE status IN ('PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')
+             AND createdAt < $1""",
+        created_at
+    )
+    prior_count = int(row_pos["count"]) if row_pos else 0
+    queue_position = prior_count + 1
+
+    # Média móvel dos últimos 10 jobs (segundos de processamento por minuto de vídeo)
+    row_avg = await db.fetchrow(
+        """SELECT AVG(secPerMinute) as avg_sec FROM (
+               SELECT secPerMinute FROM job_metrics ORDER BY createdAt DESC LIMIT 10
+           ) as recent"""
+    )
+    avg_sec_per_min = float(row_avg["avg_sec"]) if (row_avg and row_avg.get("avg_sec") is not None) else 13.0
+    video_dur_min = max(0.5, float(proj.get("durationsec") or 60.0) / 60.0)
+    estimated_time = round(queue_position * (avg_sec_per_min * video_dur_min))
+
+    return {
+        "queue_position": queue_position,
+        "estimated_time_sec": max(5, estimated_time)
+    }
+
+
+async def record_job_metric(project_id: str, duration_sec: float, total_elapsed_sec: float):
+    """Registra tempo de execução para cálculo da média móvel de estimativa de fila."""
+    if not _is_valid_uuid(project_id) or duration_sec <= 0:
+        return
+    db = await get_backend()
+    mid = str(uuid.uuid4())
+    video_min = duration_sec / 60.0
+    sec_per_min = total_elapsed_sec / video_min
+    await db.execute(
+        """INSERT INTO job_metrics (id, projectId, videoDurationSec, totalProcessingSec, secPerMinute)
+           VALUES ($1, $2, $3, $4, $5)""",
+        mid, project_id, duration_sec, total_elapsed_sec, sec_per_min
+    )
+

@@ -42,11 +42,15 @@ else:
 
 if _use_redis:
     huey = RedisHuey('clipmaker_tasks', url=redis_url)
-    logger.info("Fila Huey inicializada com Redis com sucesso.")
+    huey_ingest = RedisHuey('clipmaker_ingest', url=redis_url)
+    huey_render = RedisHuey('clipmaker_render', url=redis_url)
+    logger.info("Filas Huey (clipmaker_tasks, clipmaker_ingest, clipmaker_render) inicializadas com Redis com sucesso.")
 else:
-    queue_db_path = str(Path(__file__).resolve().parent.parent.parent.parent / "huey_queue.db")
-    huey = SqliteHuey('clipmaker_tasks', filename=queue_db_path)
-    logger.warning("[AVISO] Fila Huey inicializada com SqliteHuey local.")
+    queue_dir = Path(__file__).resolve().parent.parent.parent.parent
+    huey = SqliteHuey('clipmaker_tasks', filename=str(queue_dir / "huey_queue.db"))
+    huey_ingest = SqliteHuey('clipmaker_ingest', filename=str(queue_dir / "huey_ingest.db"))
+    huey_render = SqliteHuey('clipmaker_render', filename=str(queue_dir / "huey_render.db"))
+    logger.warning("[AVISO] Filas Huey inicializadas com SqliteHuey local.")
 
 
 def _cleanup_runtime():
@@ -61,8 +65,94 @@ def _cleanup_runtime():
         pass
 
 
+@huey_ingest.task()
+@huey.task()
+def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspect_ratio: str = "9:16"):
+    """
+    Task assíncrona de ingestão via URL:
+    1. Probe de metadados e duração via yt-dlp sem travar o event loop da API.
+    2. Download otimizado do vídeo com yt-dlp.
+    3. Atualização do projeto com o arquivo gravado.
+    4. Execução do pipeline completo (transcrição, momentos, render).
+    """
+    import time
+    import subprocess
+    from backend.app.core.config import settings
+    from backend.app.core.loop import run_sync
+    from backend.app.db.db_service import update_project_status, update_project_source, record_job_metric
+    from backend.app.services.video_service import get_video_info
+    from backend.app.services.engine_service import process_video_full_pipeline
+
+    t_start = time.time()
+    logger.info(f"[INGEST] Iniciando download por URL para projeto {project_id}: {url}")
+    safe_filename = f"{project_id}.mp4"
+    input_path = os.path.join(temp_dir, safe_filename)
+    max_duration_sec = settings.MAX_DURATION_SEC
+
+    try:
+        run_sync(update_project_status(project_id, "DOWNLOADING"))
+
+        # 1. Probe prévio com timeout controlado
+        probe_cmd = [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--print", "duration", "--", url]
+        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
+        video_duration = 0.0
+        if probe_res.returncode == 0:
+            try:
+                video_duration = float(probe_res.stdout.strip() or "0")
+            except ValueError:
+                pass
+
+        if video_duration > max_duration_sec:
+            raise ValueError(f"O vídeo excede o limite máximo permitido de {max_duration_sec} segundos.")
+
+        # 2. Download otimizado
+        max_height = getattr(settings, "MAX_SOURCE_HEIGHT", 1080)
+        download_cmd = [
+            sys.executable, "-m", "yt_dlp",
+            "--force-ipv4",
+            "--concurrent-fragments", "4",
+            "--quiet", "--no-progress",
+            "-f", f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+            "--merge-output-format", "mp4",
+            "-o", input_path,
+            "--", url
+        ]
+        dl_res = subprocess.run(download_cmd, capture_output=True, text=True, timeout=1800)
+        if dl_res.returncode != 0:
+            raise RuntimeError(f"Falha no download via yt-dlp: {dl_res.stderr[-500:]}")
+
+        if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
+            raise RuntimeError("O arquivo de vídeo baixado está vazio ou não foi gravado.")
+
+        # 3. Probe real no arquivo baixado
+        _, _, actual_duration = get_video_info(input_path)
+        if actual_duration > max_duration_sec:
+            raise ValueError(f"O vídeo excede a duração máxima permitida ({actual_duration:.1f}s > {max_duration_sec}s).")
+
+        run_sync(update_project_source(project_id, safe_filename, actual_duration))
+        logger.info(f"[INGEST] Download concluído para {project_id}: {safe_filename} ({actual_duration:.1f}s)")
+
+        # 4. Execução do pipeline completo
+        clips = process_video_full_pipeline(input_path, temp_dir, project_id, aspect_ratio, source_url=url)
+        elapsed = time.time() - t_start
+        run_sync(record_job_metric(project_id, actual_duration, elapsed))
+        logger.info(f"Sucesso! Projeto {project_id} finalizado em {elapsed:.1f}s ({len(clips)} clipes).")
+
+    except Exception as e:
+        logger.error(f"Erro no processamento por URL para {project_id}: {e}", exc_info=True)
+        run_sync(update_project_status(project_id, "FAILED", str(e)))
+        if os.path.exists(input_path):
+            try: os.remove(input_path)
+            except OSError: pass
+    finally:
+        _cleanup_runtime()
+
+
+@huey_ingest.task()
 @huey.task()
 def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_ratio: str = "9:16"):
+    import time
+    t_start = time.time()
     logger.info(f"Iniciando processamento para o projeto: {project_id} (proporção: {aspect_ratio})")
     logger.info(f"Input: {input_path}")
     try:
@@ -72,9 +162,18 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
         logger.info(f"Sucesso! Clipes gerados para {project_id}: {len(clips)}")
         
         from backend.app.core.loop import run_sync
-        from backend.app.db.db_service import save_project_results
+        from backend.app.db.db_service import save_project_results, record_job_metric
+        from backend.app.services.video_service import get_video_info
+
         run_sync(save_project_results(project_id, clips))
         logger.info(f"Resultados salvos no banco para {project_id}")
+
+        elapsed = time.time() - t_start
+        try:
+            _, _, dur = get_video_info(input_path)
+            run_sync(record_job_metric(project_id, dur, elapsed))
+        except Exception:
+            pass
         
     except Exception as e:
         logger.error(f"Erro ao processar projeto {project_id}: {e}")
@@ -92,6 +191,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
             logger.info(f"Vídeo original preservado para edições: {input_path}")
 
 
+@huey_render.task()
 @huey.task()
 def re_render_clip_task(clip_id: str, payload_dict: dict):
     from backend.app.core.loop import run_sync

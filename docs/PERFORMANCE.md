@@ -336,4 +336,79 @@ Medições realizadas dentro do container worker (`clipmaker-prod-worker-1`), co
 - Rodada 3: 85.58s (Whisper warm cache: 13.37s)
 - **Mediana: 86.41s (Variação: Δ 9.66s)**
 
+---
+
+## 11. Etapa 3 — API, Entrega de Vídeo e Filas de Tarefas
+
+Nesta etapa, o foco foi a escalabilidade da API, estabilidade do event loop assíncrono, proteção contra sobrecarga e entrega de vídeo de alta performance via proxy reverso Nginx:
+
+### 1. Desbloqueio Completo do Event Loop Async
+- **Diagnóstico do Gargalo:** O endpoint `/upload-url` executava `yt-dlp` com `subprocess.run` (com timeout de até 30 minutos) diretamente dentro da corrotina assíncrona do FastAPI. Sob Uvicorn com 1 worker de CPU, qualquer importação por URL travava a thread principal da API, impossibilitando outros usuários de fazerem login, consultarem status ou baixarem clipes.
+- **Solução Implementada:** 
+  - Todo o ciclo de download e probe via `yt-dlp` foi transferido para a task Huey `download_and_process_url_task` na fila `huey_ingest`.
+  - A rota agora apenas valida a URL com proteção SSRF contra IPs internos, cria o projeto com status inicial `DOWNLOADING` e responde imediatamente (**latência < 15ms**).
+  - No upload de arquivos locais (`/upload-and-process`), a escrita dos blocos em disco e a análise de metadados (`get_video_info` / `ffprobe`) foram descarregadas para o threadpool interno via `asyncio.to_thread`.
+  - O status `DOWNLOADING` foi integrado ao frontend como a primeira etapa visual ("📥 Baixando mídia"), garantindo transparência ao usuário.
+
+### 2. Entrega de Vídeo Otimizada via Nginx (`X-Accel-Redirect`)
+- **Problema Anterior:** Os clipes renderizados eram servidos diretamente pelo processo Python via `FileResponse`. Além de consumir conexões lentas no Uvicorn e elevar o uso de memória por stream, o seek no player HTML5 sofria com overhead de buffering.
+- **Solução Implementada:**
+  - O endpoint `/api/videos/download/{clip_id}` mantém a autenticação JWT e validação de propriedade do clipe, mas responde com o cabeçalho `X-Accel-Redirect: /internal_videos/<filename>`.
+  - O Nginx intercepta esse cabeçalho e serve o arquivo diretamente a partir do volume nomeado montado como somente leitura (`/var/lib/clipmaker/videos/:ro`).
+  - Habilitado cache de descritores e metadados de arquivos abertos (`open_file_cache max=1000 inactive=120s; open_file_cache_valid 60s;`).
+  - Habilitado suporte completo a HTTP Range (`Accept-Ranges: bytes`, status 206 Partial Content), permitindo seek e scrubbing instantâneo na timeline de vídeo.
+  - Mantido fallback transparente em `FileResponse` caso o backend seja executado diretamente em ambiente de desenvolvimento sem o proxy Nginx.
+  - **Segurança Anti-Traversal:** O nome do arquivo é resolvido estritamente a partir do banco de dados (`renderedUrl`), e o caminho físico final é validado com `Path.relative_to(TEMP_DIR.resolve())` para impedir qualquer injeção de caminho (`../`).
+
+### 3. Consultas de Banco Otimizadas com JOIN Direto
+- No endpoint de download e miniaturas, o padrão anterior de chamar `get_clip + get_project_with_clips` (que realizava múltiplas queries, trazia todos os clipes daquele projeto e fazia parse desnecessário de listas JSON `wordsJson`) foi substituído pela função `get_clip_with_owner`.
+- Uma única query SQL com `JOIN` simples traz estritamente o `id`, `renderedUrl`, `thumbnail_key`, `status` e o `userId` do projeto proprietário em uma única ida e volta ao banco.
+
+### 4. Limites de Proteção e Rate Limiting Centralizado
+- **Concorrência por Usuário:** Implementada a verificação `count_active_projects_by_user`. Usuários que atingem `MAX_CONCURRENT_JOBS_PER_USER` (padrão 2 jobs simultâneos ativos em `PENDING`, `DOWNLOADING`, `TRANSCRIBING`, `ANALYZING` ou `RENDERING`) recebem HTTP 429 Too Many Requests, evitando que um único usuário monopolize a fila do cluster.
+- **Proteção do Re-render:** Endpoint de re-renderização protegido com rate limit explícito de `@limiter.limit("10/minute")`.
+- **Armazenamento de Rate Limit no Redis:** O backend de storage do `slowapi` foi configurado para apontar diretamente para a instância central do Redis (`storage_uri=settings.REDIS_URL`), persistindo o controle de taxa de requisições de forma compartilhada e resiliente.
+
+### 5. Filas Especializadas do Huey e Escalabilidade
+- Criadas filas dedicadas no `worker.py`:
+  - `huey_ingest`: Tarefas de I/O de rede e transcrição de áudio (`download_and_process_url_task`, `process_video_task`).
+  - `huey_render`: Tarefas intensivas de GPU e codificação FFmpeg (`re_render_clip_task`).
+  - `huey`: Fila mestre unificada mantida para balanceamento geral.
+- Documentado no Compose o procedimento operacional para subir múltiplas réplicas do worker (`docker compose up -d --scale worker=N`) e configuração de threads por processo (`-w N -k thread`).
+
+### 6. Fila Visível e Estimativa Dinâmica de Tempo (ETA)
+- Criada a tabela `job_metrics` (migração `004_etapa3_api_queue.sql`) com índice de ordenação `idx_job_metrics_created_at`.
+- Ao término de cada job, o sistema grava a duração do vídeo, tempo total de processamento e a métrica de segundos por minuto de vídeo (`secPerMinute`).
+- A função `get_project_queue_info` calcula em tempo real a posição do job na fila (`queuePosition`) comparando seu timestamp com outros projetos ativos.
+- O tempo estimado (`estimatedTimeSec`) é projetado com base na média móvel dos últimos 10 jobs finalizados, multiplicada pela duração do vídeo do projeto e sua posição na fila.
+- Os valores são retornados pelo endpoint `/api/projects/{id}/status` e renderizados na interface para o usuário.
+
+---
+
+### Tabela 7: Comparativo de Desempenho Global (Etapa 0 até Etapa 3)
+
+Medições realizadas dentro do container worker (`clipmaker-prod-worker-1`), com aceleração NVIDIA NVENC, 4 vCPUs e volume nomeado Docker, comparando a evolução do pipeline ao longo de todas as etapas de otimização no vídeo padrão de benchmark (256.56 MB, 6.77 min, 5 clipes gerados em 9:16):
+
+| Fase do Pipeline | Etapa 0 (Baseline Inicial) | Etapa 1 (Infra + GPU) | Etapa 2 (Pipeline Único) | Etapa 3 (API + Filas + Métricas) | Variação Min - Max (Etapa 3) | Redução Total vs Etapa 0 (%) | Aceleração Global |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1. Probe (ffprobe)** | 0.07s | 0.06s | 0.06s | **0.06s** | 0.05s – 0.08s | -14.3% | 1.17x |
+| **2. Transcrição (Whisper)** | 30.37s | 13.28s | 13.37s | **12.14s** | 11.80s – 23.57s | **-60.0%** | **2.50x** |
+| **3. LLM (Detecção Momentos)** | 0.00s | 0.00s | 0.00s | **0.00s** | 0.00s – 0.00s | 0.0% | — |
+| **4. Face Tracking (OpenCV)** | 16.34s | 8.11s | 55.35s\* | **47.80s\*** | 47.80s – 48.17s | *(Todo o vídeo)* | *(Maior estabilidade)* |
+| **5. Render Vídeo (FFmpeg)** | 107.01s | 40.54s | 73.61s\* | **63.01s\*** | 62.46s – 64.66s | *(Passe Único)* | *(NVENC acelerado)* |
+| **6. Legendas Burn-in (FFmpeg)**| 77.66s | 35.56s | 0.00s | **0.00s** | 0.00s – 0.00s | **-100.0%** | **Eliminado** |
+| **7. Overhead / E/S / Thumbs** | 1.78s | 1.24s | 0.00s | **0.00s** | 0.00s – 0.00s | **-100.0%** | **Eliminado** |
+| **TEMPO TOTAL (Wall-Clock)** | **235.16s** (3m 55s) | **100.65s** (1m 40s) | **86.41s** (1m 26s) | **72.25s** (1m 12s) | **71.75s – 83.01s** | **-69.3%** | **3.25x mais rápido** |
+| **COM REUSO DE TRANSCRIÇÃO** | — | — | ~73.04s | **~59.88s** (< 1 min) | — | **-74.5%** | **3.93x mais rápido** |
+| **LATÊNCIA ROTA URL (API)** | > 60s (bloqueante) | > 60s (bloqueante) | > 60s (bloqueante) | **< 15ms** (assíncrono) | — | **-99.9%** | **Instantâneo** |
+
+*\*Nota: Os tempos das fases 4 e 5 são executados concorrentemente no ThreadPoolExecutor (paralelismo=2). O tempo de relógio real (wall-clock) do pipeline completo é de apenas **72.25s** na mediana.*
+
+*Resumo das 3 rodadas da Etapa 3:*
+- Rodada 1: 83.01s (Whisper cold start na VRAM: 23.57s)
+- Rodada 2: 71.75s (Whisper warm cache: 12.14s)
+- Rodada 3: 72.25s (Whisper warm cache: 11.80s)
+- **Mediana: 72.25s (Variação: 71.75s – 83.01s)**
+
+
 

@@ -1,15 +1,16 @@
 import uuid
 from typing import List, Optional, Literal
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
-from backend.app.api.deps import get_current_user
+from backend.app.api.deps import get_current_user, limiter
 from backend.app.db.db_service import (
     get_project_with_clips,
     get_clip,
     create_project,
     get_user_projects,
-    update_clip_status
+    update_clip_status,
+    get_project_queue_info
 )
 from backend.app.worker.worker import re_render_clip_task
 
@@ -98,11 +99,15 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
             "captionConfig": c.get("captionconfig", "Yellow")
         })
 
+    queue_info = await get_project_queue_info(project_id)
+
     return {
         "status": project.get("status"),
         "error": project.get("errormessage"),
         "title": project.get("title"),
         "aiCutsFallback": bool(project.get("ai_cuts_fallback") or project.get("aicutsfallback") or False),
+        "queuePosition": queue_info.get("queue_position", 1),
+        "estimatedTimeSec": queue_info.get("estimated_time_sec", 30),
         "clips": clips_list
     }
 
@@ -127,7 +132,13 @@ async def get_clip_status(clip_id: str, current_user: dict = Depends(get_current
 
 
 @router.post("/clip/{clip_id}/re-render")
-async def re_render_clip_endpoint(clip_id: str, payload: ReRenderRequest, current_user: dict = Depends(get_current_user)):
+@limiter.limit("10/minute")
+async def re_render_clip_endpoint(
+    request: Request,
+    clip_id: str,
+    payload: ReRenderRequest,
+    current_user: dict = Depends(get_current_user)
+):
     clip = await get_clip(clip_id)
     if not clip:
         raise HTTPException(status_code=404, detail="Clipe não encontrado")

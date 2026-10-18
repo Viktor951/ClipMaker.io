@@ -132,6 +132,18 @@ services:
     cpus: 1.0
 
   # ── WORKER (Huey + Whisper GPU + FFmpeg) ─────────────────────────────────
+  # ESCALABILIDADE DE WORKERS E FILAS (Etapa 3):
+  # - Subir mais de uma réplica do worker:
+  #     docker compose -f docker-compose.prod.yml up -d --scale worker=2
+  # - Definir quantas threads cada réplica usa:
+  #     Ajuste o parâmetro -w <N> no comando abaixo (ex.: -w 2 -k thread).
+  #     Recomendado: 1 worker process com 1-2 threads para respeitar VRAM da GPU e evitar contenção de CPU.
+  # - Separação por filas (ingest vs render):
+  #     Para dedicar instâncias à ingestão (download/transcrição):
+  #       huey_consumer backend.app.worker.worker.huey_ingest -w 1 -k thread
+  #     Para dedicar instâncias à renderização/crop:
+  #       huey_consumer backend.app.worker.worker.huey_render -w 1 -k thread
+  #     Por padrão, backend.app.worker.worker.huey processa todas as tarefas unificadas.
   worker:
     <<: *hardening
     build:
@@ -197,6 +209,7 @@ services:
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - clipmaker_temp_videos:/var/lib/clipmaker/videos:ro
     depends_on:
       api:
         condition: service_healthy

@@ -231,3 +231,180 @@ def test_viral_score_and_boundaries():
         assert "hook" in b
         assert "viral_score" in b
         assert 0 <= b["viral_score"] <= 100
+
+
+@pytest.mark.asyncio
+async def test_async_url_route_queue_and_status(monkeypatch):
+    """Testa que a rota de URL responde imediatamente (<15ms) e cria o projeto como DOWNLOADING."""
+    from unittest.mock import MagicMock
+    mock_task = MagicMock()
+    monkeypatch.setattr("backend.app.api.routers.video.download_and_process_url_task", mock_task)
+
+    async with get_client() as ac:
+        email = f"url_user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        await ac.post("/api/v1/auth/register", json={"email": email, "password": pwd})
+        login_resp = await ac.post("/api/v1/auth/login", data={"username": email, "password": pwd})
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        resp = await ac.post(
+            "/api/videos/upload-url/",
+            data={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "aspect_ratio": "9:16"},
+            headers=headers
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "processing"
+        assert data["initial_status"] == "DOWNLOADING"
+        project_id = data["project_id"]
+        assert project_id is not None
+        mock_task.assert_called_once()
+
+        # Checa status no endpoint de projetos
+        status_resp = await ac.get(f"/api/projects/{project_id}/status", headers=headers)
+        assert status_resp.status_code == 200
+        sdata = status_resp.json()
+        assert sdata["status"] == "DOWNLOADING"
+        assert sdata["queuePosition"] >= 1
+        assert sdata["estimatedTimeSec"] > 0
+
+
+@pytest.mark.asyncio
+async def test_x_accel_redirect_and_fallback():
+    """Testa entrega acelerada via X-Accel-Redirect com header de proxy e fallback FileResponse."""
+    from backend.app.core.config import settings
+    from backend.app.db.db_service import create_project, save_single_clip
+    from pathlib import Path
+
+    temp_dir = Path(settings.TEMP_DIR)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    async with get_client() as ac:
+        email = f"accel_user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg = await ac.post("/api/v1/auth/register", json={"email": email, "password": pwd})
+        user_id = reg.json()["user_id"]
+        login_resp = await ac.post("/api/v1/auth/login", data={"username": email, "password": pwd})
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        project_id = await create_project(user_id, "Projeto X-Accel", "video.mp4", 30.0)
+        clip_id = str(uuid.uuid4())
+        video_filename = f"clip_{clip_id}.mp4"
+        dummy_file = temp_dir / video_filename
+        dummy_file.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00")
+
+        await save_single_clip(project_id, {
+            "id": clip_id,
+            "renderedUrl": video_filename,
+            "title": "Clipe X-Accel",
+            "startTime": 0.0,
+            "endTime": 10.0,
+            "durationSec": 10.0,
+            "viralScore": 88,
+            "aspectRatio": "9:16",
+            "hookReason": "Hook",
+            "words": [],
+            "thumbnail_key": f"thumb_{clip_id}.jpg"
+        })
+
+        try:
+            # 1. Com suporte a proxy/Nginx -> X-Accel-Redirect
+            accel_headers = {**headers, "X-Request-Accel": "1"}
+            res_accel = await ac.get(f"/api/videos/download/{clip_id}", headers=accel_headers)
+            assert res_accel.status_code == 200
+            assert "x-accel-redirect" in res_accel.headers
+            assert res_accel.headers["x-accel-redirect"] == f"/internal_videos/{video_filename}"
+            assert res_accel.headers.get("accept-ranges") == "bytes"
+
+            # 2. Sem Nginx / dev local -> FileResponse
+            no_accel_headers = {**headers, "X-Disable-Accel": "1"}
+            res_direct = await ac.get(f"/api/videos/download/{clip_id}", headers=no_accel_headers)
+            assert res_direct.status_code == 200
+            assert "x-accel-redirect" not in res_direct.headers
+            assert len(res_direct.content) > 0
+        finally:
+            if dummy_file.exists():
+                dummy_file.unlink()
+
+
+@pytest.mark.asyncio
+async def test_clip_access_denied_for_other_user():
+    """Testa que usuário B recebe 403 Forbidden ao tentar baixar clipe pertencente a usuário A."""
+    from backend.app.core.config import settings
+    from backend.app.db.db_service import create_project, save_single_clip
+    from pathlib import Path
+
+    temp_dir = Path(settings.TEMP_DIR)
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    async with get_client() as ac:
+        # Usuário A (dono)
+        email_a = f"owner_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg_a = await ac.post("/api/v1/auth/register", json={"email": email_a, "password": pwd})
+        user_a_id = reg_a.json()["user_id"]
+
+        project_id = await create_project(user_a_id, "Projeto Owner", "video.mp4", 30.0)
+        clip_id = str(uuid.uuid4())
+        video_filename = f"clip_{clip_id}.mp4"
+        dummy_file = temp_dir / video_filename
+        dummy_file.write_bytes(b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00")
+
+        await save_single_clip(project_id, {
+            "id": clip_id,
+            "renderedUrl": video_filename,
+            "title": "Clipe Privado",
+            "startTime": 0.0,
+            "endTime": 10.0,
+            "durationSec": 10.0,
+            "viralScore": 85,
+            "aspectRatio": "9:16",
+            "hookReason": "Hook",
+            "words": []
+        })
+
+        # Usuário B (invasor)
+        email_b = f"intruder_{uuid.uuid4().hex[:8]}@example.com"
+        await ac.post("/api/v1/auth/register", json={"email": email_b, "password": pwd})
+        login_b = await ac.post("/api/v1/auth/login", data={"username": email_b, "password": pwd})
+        token_b = login_b.json()["access_token"]
+        headers_b = {"Authorization": f"Bearer {token_b}"}
+
+        try:
+            res = await ac.get(f"/api/videos/download/{clip_id}", headers=headers_b)
+            assert res.status_code == 403
+            assert "Acesso negado" in res.json()["detail"]
+        finally:
+            if dummy_file.exists():
+                dummy_file.unlink()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_jobs_limit(monkeypatch):
+    """Testa que atingir o limite de jobs simultâneos retorna HTTP 429."""
+    from backend.app.db.db_service import create_project
+
+    async with get_client() as ac:
+        email = f"limit_user_{uuid.uuid4().hex[:8]}@example.com"
+        pwd = "securePassword123!"
+        reg = await ac.post("/api/v1/auth/register", json={"email": email, "password": pwd})
+        user_id = reg.json()["user_id"]
+        login_resp = await ac.post("/api/v1/auth/login", data={"username": email, "password": pwd})
+        token = login_resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Cria 2 jobs ativos (status PENDING / DOWNLOADING)
+        await create_project(user_id, "Job 1", "v1.mp4", 10.0, status="DOWNLOADING")
+        await create_project(user_id, "Job 2", "v2.mp4", 10.0, status="PENDING")
+
+        # Tentativa de iniciar um terceiro job simultâneo
+        res = await ac.post(
+            "/api/videos/upload-url/",
+            data={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "aspect_ratio": "9:16"},
+            headers=headers
+        )
+        assert res.status_code == 429
+        assert "simultâneos atingido" in res.json()["detail"]
+

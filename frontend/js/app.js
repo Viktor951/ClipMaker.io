@@ -381,8 +381,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 url.searchParams.set('project', data.project_id);
                 history.pushState({ page: 'processing', projectId: data.project_id, sourceName }, '', url.toString());
 
-                updateStepUI(1);
-                if (percentageEl) percentageEl.innerText = "Na Fila...";
+                updateStepUI(0);
+                if (percentageEl) percentageEl.innerText = isFile ? "Iniciando processamento..." : "📥 Baixando mídia...";
                 pollProjectStatus(data.project_id, sourceName);
             } else {
                 throw new Error("Resposta inesperada do servidor.");
@@ -472,28 +472,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     if (percentageEl) percentageEl.classList.add('pulse-animation');
                     
-                    if (data.status === 'TRANSCRIBING') {
+                    const queuePos = data.queuePosition || 1;
+                    const etaSec = data.estimatedTimeSec || 30;
+                    const queueSuffix = queuePos > 1 ? ` (Fila #${queuePos} • ~${etaSec}s)` : ` (~${etaSec}s restantes)`;
+
+                    if (data.status === 'DOWNLOADING') {
+                        updateStepUI(0);
+                        if (percentageEl) percentageEl.innerText = `📥 Baixando vídeo por URL via fila...${queueSuffix}`;
+                        if (progressFill) progressFill.style.width = '15%';
+                    } else if (data.status === 'TRANSCRIBING') {
                         updateStepUI(1);
-                        if (percentageEl) percentageEl.innerText = "🧠 Extraindo áudio e transcrevendo com IA...";
+                        if (percentageEl) percentageEl.innerText = `🧠 Extraindo áudio e transcrevendo com IA...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '35%';
                     } else if (data.status === 'ANALYZING') {
                         updateStepUI(2);
-                        if (percentageEl) percentageEl.innerText = "🔍 Detectando momentos virais com IA...";
+                        if (percentageEl) percentageEl.innerText = `🔍 Detectando momentos virais com IA...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '65%';
                     } else if (data.status === 'RENDERING') {
                         updateStepUI(3);
-                        if (percentageEl) percentageEl.innerText = "✂️ Renderizando cortes no formato vertical 9:16...";
+                        if (percentageEl) percentageEl.innerText = `✂️ Renderizando cortes no formato vertical...${queueSuffix}`;
                         if (progressFill) progressFill.style.width = '85%';
                     } else {
                         updateStepUI(0);
-                        if (percentageEl) {
-                            if (percentageEl.innerText === "Na Fila..." || percentageEl.innerText === "0%") {
-                                percentageEl.innerText = "15%";
-                            } else if (!isNaN(parseInt(percentageEl.innerText)) && parseInt(percentageEl.innerText) < 95) {
-                                percentageEl.innerText = parseInt(percentageEl.innerText) + 5 + "%";
-                            }
-                        }
-                        if (progressFill) progressFill.style.width = '20%';
+                        if (percentageEl) percentageEl.innerText = `⏳ Na fila de processamento...${queueSuffix}`;
+                        if (progressFill) progressFill.style.width = '10%';
                     }
                     scheduleNext(3000);
                 }
