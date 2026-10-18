@@ -26,6 +26,44 @@ A plataforma automatiza todo o pipeline de pós-produção: transcrição de áu
 
 ---
 
+## 🎨 Identidade Visual & Design System
+
+A interface do ClipMaker.io adota a identidade **Studio Engine**, com estética técnica cinematográfica de alto contraste e foco no desempenho:
+
+### Marca Unificada
+- **Nome:** **ClipMaker.io**
+- **Símbolo:** Ícone vetorial com enquadramento horizontal widescreen transicionado para corte vertical 9:16 em Studio Lime com marcador play.
+- **Assets de Marca:** Favicon SVG escalável, PNGs multi-resolução (`16x16`, `32x32`), `apple-touch-icon.png` (180x180) e Social Card `og-image.png` (1200x630).
+
+### Paleta de Cores e Tokens (`frontend/css/tokens.css`)
+| Token | Cor Hex | Uso Principal |
+| :--- | :--- | :--- |
+| `--surface-0` | `#090A0D` | Fundo principal da página (Deep Carbon) |
+| `--surface-1` | `#111318` | Superfície de cartões, modais e rodapé |
+| `--surface-2` | `#181B22` | Entradas de formulário, pills e containers secundários |
+| `--surface-3` | `#222631` | Trilhas de progresso e estados de hover sutil |
+| `--accent-ai` | `#00F076` | Destaque principal (Studio Lime) — CTAs, progresso, badges virais |
+| `--text-100` | `#F4F6F9` | Títulos e texto de máxima ênfase (contraste 18.28:1) |
+| `--text-200` | `#C2C8D2` | Subtítulos, descrições e ganchos (contraste 11.05:1) |
+| `--text-300` | `#8E96A6` | Metadados e placeholders legíveis (contraste 5.80:1) |
+| `--color-error` | `#EF4444` | Alertas e toasts de erro |
+| `--accent-warn` | `#F59E0B` | Scores virais médios (<90) |
+
+### Tipografia
+- **Títulos e Display:** `Space Grotesk` (Google Fonts, pesos 600/700, tracking `-0.015em`, espaçamento calibrado sem sobreposição de caracteres).
+- **Interface e Corpo:** `Inter` (Google Fonts, pesos 400/500/600, alta legibilidade em todas as densidades de tela).
+- **Métricas e Dados:** `JetBrains Mono` (Google Fonts, pesos 500/600/700, utilizado em scores virais, durações, timestamps e badges técnicos).
+
+### Sistema de Ícones Vetoriais
+- **Zero Dependências Pesadas:** Ícones via máscaras CSS (`mask-image: url(...)`) em SVG monocromático (`frontend/css/icons.css`), eliminando o carregamento de arquivos pesados de fontes (~500 KB economizados).
+
+### Acessibilidade (WCAG 2.1 AA)
+- **Contraste Auditado:** 100% dos pares texto/fundo aprovados no critério AA, com títulos e textos primários atingindo nível AAA.
+- **Navegação por Teclado:** Foco acessível global com anel de destaque em Studio Lime (`:focus-visible { outline: 2px solid var(--accent-ai); outline-offset: 2px; }`).
+- **Semântica:** Abas com `role="tablist"` / `role="tab"` / `aria-selected`, seletores de proporção com `tabindex="0"`, toasts com `role="status"` ou `role="alert"`.
+
+---
+
 ## 🏗️ Arquitetura do Sistema
 
 ```text
