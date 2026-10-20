@@ -28,14 +28,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons: Subset vetorial leve local (~3KB, substitui Font Awesome de ~500KB) -->
-    <link rel="stylesheet" href="css/icons.css?v=6b2cc45a">
+    <link rel="stylesheet" href="css/icons.css?v=ce2386c9">
     
     <!-- Stylesheets -->
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
     <link rel="stylesheet" href="css/layout.css?v=2e9a82ce">
-    <link rel="stylesheet" href="css/components.css?v=aa365725">
+    <link rel="stylesheet" href="css/components.css?v=2d391347">
     <link rel="stylesheet" href="css/responsive.css?v=60872474">
 </head>
 <body>
@@ -642,8 +642,15 @@
                     <div class="projects-modal-toolbar">
                         <div class="projects-search-box">
                             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                            <input type="text" id="projects-filter-input" placeholder="Buscar projeto por título..." class="projects-search-input" aria-label="Filtrar projetos">
+                            <input type="text" id="projects-filter-input" placeholder="Buscar projeto por título..." class="projects-search-input" aria-label="Filtrar projetos por título">
                         </div>
+                        <select id="projects-status-filter" class="projects-status-select" aria-label="Filtrar projetos por status">
+                            <option value="ALL">Todos os status</option>
+                            <option value="READY">Concluídos</option>
+                            <option value="PROCESSING">Processando</option>
+                            <option value="FAILED">Falharam</option>
+                            <option value="EXPIRED">Expirados</option>
+                        </select>
                         <button type="button" class="btn-secondary btn-sm" id="btn-refresh-projects" title="Atualizar lista de projetos">
                             <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Atualizar
                         </button>
@@ -766,7 +773,7 @@
 
     <!-- Scripts com defer e versionamento -->
     <script src="js/ui.js?v=6c0ff74a" defer></script>
-    <script src="js/app.js?v=8fc422f9" defer></script>
+    <script src="js/app.js?v=9483d48a" defer></script>
 
 </body>
 </html>

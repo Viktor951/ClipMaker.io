@@ -221,9 +221,13 @@ async def process_video(
             logger.warning(f"Vídeo inválido enviado: {e}")
             raise HTTPException(status_code=400, detail="Arquivo de vídeo inválido ou corrompido.")
 
+        # Sanitização do título do vídeo: nome sem extensão, sem tags HTML, truncado
+        raw_stem = Path(file.filename or "video").stem
+        clean_title = re.sub(r'<[^>]*>', '', raw_stem).strip()[:120] or "Vídeo Enviado"
+
         project_id = await create_project(
             user_id=user_id,
-            title=file.filename or "Upload de Vídeo",
+            title=clean_title,
             source_file_key=safe_filename,
             duration_sec=duration
         )
@@ -271,10 +275,17 @@ async def process_url(
 
         safe_filename = f"{uuid.uuid4()}.mp4"
 
+        # Inicializa o projeto com título temporário amigável (domínio + data), atualizado pelo worker com o título real do yt-dlp
+        parsed_url = urlparse(clean_url)
+        domain = parsed_url.netloc or "Vídeo Online"
+        clean_domain = re.sub(r'<[^>]*>', '', domain).strip()[:60]
+        from datetime import datetime
+        initial_title = f"{clean_domain} ({datetime.now().strftime('%d/%m/%Y')})"
+
         # Cria o projeto imediatamente com status inicial DOWNLOADING
         project_id = await create_project(
             user_id=user_id,
-            title="Importação por URL",
+            title=initial_title,
             source_file_key=safe_filename,
             duration_sec=0.0,
             source_url=clean_url,

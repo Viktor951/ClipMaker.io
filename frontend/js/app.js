@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnCloseProjectsModal = document.getElementById('btn-close-projects-modal');
     const btnRefreshProjects = document.getElementById('btn-refresh-projects');
     const projectsFilterInput = document.getElementById('projects-filter-input');
+    const projectsStatusSelect = document.getElementById('projects-status-filter');
     const projectsListContainer = document.getElementById('projects-list-container');
     let isLoginMode = true;
 
@@ -138,6 +139,55 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Projects Modal Logic ---
     let cachedUserProjects = [];
 
+    const STATUS_MAP = {
+        'DRAFT': { label: 'Rascunho', icon: 'fa-solid fa-pen-to-square', class: 'status-draft', spin: false },
+        'PENDING': { label: 'Na fila', icon: 'fa-solid fa-clock', class: 'status-pending', spin: false },
+        'DOWNLOADING': { label: 'Baixando vídeo', icon: 'fa-solid fa-spinner', class: 'status-processing', spin: true },
+        'TRANSCRIBING': { label: 'Transcrevendo áudio', icon: 'fa-solid fa-spinner', class: 'status-processing', spin: true },
+        'ANALYZING': { label: 'Analisando momentos', icon: 'fa-solid fa-spinner', class: 'status-processing', spin: true },
+        'RENDERING': { label: 'Renderizando cortes', icon: 'fa-solid fa-spinner', class: 'status-processing', spin: true },
+        'READY': { label: 'Concluído', icon: 'fa-solid fa-circle-check', class: 'status-ready', spin: false },
+        'COMPLETED': { label: 'Concluído', icon: 'fa-solid fa-circle-check', class: 'status-ready', spin: false },
+        'FAILED': { label: 'Falhou', icon: 'fa-solid fa-circle-exclamation', class: 'status-failed', spin: false },
+        'EXPIRED': { label: 'Expirado', icon: 'fa-solid fa-clock-rotate-left', class: 'status-expired', spin: false }
+    };
+
+    function formatDuration(sec) {
+        if (!sec || isNaN(sec) || sec <= 0) return '--';
+        const s = Math.round(sec);
+        const m = Math.floor(s / 60);
+        const remS = s % 60;
+        if (m < 60) {
+            return `${m}:${String(remS).padStart(2, '0')}`;
+        }
+        const h = Math.floor(m / 60);
+        const remM = m % 60;
+        return `${h}:${String(remM).padStart(2, '0')}:${String(remS).padStart(2, '0')}`;
+    }
+
+    function formatRelativeTime(dateStr) {
+        if (!dateStr) return '';
+        try {
+            const d = new Date(dateStr);
+            if (isNaN(d.getTime())) return '';
+            const now = new Date();
+            const diffMs = now - d;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHours = Math.floor(diffMin / 60);
+            const diffDays = Math.floor(diffHours / 24);
+
+            if (diffSec < 60) return 'Agora mesmo';
+            if (diffMin < 60) return `Há ${diffMin} min`;
+            if (diffHours < 24) return `Há ${diffHours}h`;
+            if (diffDays === 1) return 'Ontem';
+            if (diffDays < 7) return `Há ${diffDays} dias`;
+            return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        } catch (e) {
+            return '';
+        }
+    }
+
     async function loadUserProjects() {
         if (!authToken) {
             showToast("Faça login para ver seus projetos.", "info");
@@ -145,9 +195,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (!projectsListContainer) return;
         projectsListContainer.innerHTML = `
-            <div class="projects-loading-state">
-                <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Carregando seus projetos...
-            </div>
+            <div class="project-skeleton-card"></div>
+            <div class="project-skeleton-card"></div>
+            <div class="project-skeleton-card"></div>
         `;
 
         try {
@@ -157,7 +207,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error("Falha ao carregar lista de projetos.");
             const data = await res.json();
             cachedUserProjects = data.projects || [];
-            renderProjectsList(cachedUserProjects);
+            applyProjectsFilter();
             fetchUserProfile();
         } catch (err) {
             projectsListContainer.innerHTML = `
@@ -170,6 +220,45 @@ document.addEventListener('DOMContentLoaded', () => {
             const retryBtn = document.getElementById('btn-retry-load-projects');
             if (retryBtn) retryBtn.addEventListener('click', loadUserProjects);
         }
+    }
+
+    function showDeleteConfirmModal(projectName, onConfirm) {
+        const overlay = document.createElement('div');
+        overlay.className = 'delete-confirm-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.innerHTML = `
+            <div class="delete-confirm-box">
+                <div class="delete-confirm-header">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span>Excluir Projeto</span>
+                </div>
+                <div class="delete-confirm-body">
+                    Deseja realmente excluir o projeto <strong>${escapeHtml(projectName)}</strong>? Todos os cortes gerados e metadados serão removidos permanentemente.
+                </div>
+                <div class="delete-confirm-actions">
+                    <button type="button" class="btn-secondary btn-sm" id="btn-cancel-delete">Cancelar</button>
+                    <button type="button" class="btn-primary btn-sm" style="background: #EF4444; border-color: #EF4444;" id="btn-confirm-delete">Sim, Excluir</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+
+        const cancelBtn = overlay.querySelector('#btn-cancel-delete');
+        const confirmBtn = overlay.querySelector('#btn-confirm-delete');
+
+        const closeModal = () => {
+            if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        };
+
+        cancelBtn.addEventListener('click', closeModal);
+        confirmBtn.addEventListener('click', () => {
+            closeModal();
+            onConfirm();
+        });
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
     }
 
     function renderProjectsList(projects) {
@@ -191,29 +280,82 @@ document.addEventListener('DOMContentLoaded', () => {
             card.className = 'project-item-card';
             card.id = `project-card-${p.id}`;
 
-            const statusClass = `status-${(p.status || 'pending').toLowerCase()}`;
-            const statusLabel = p.status || 'PENDING';
-            const dur = p.durationsec ? `${Math.round(p.durationsec)}s` : '--';
-            const dateStr = p.createdat ? new Date(p.createdat).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            const st = STATUS_MAP[p.status] || { label: p.status || 'Pendente', icon: 'fa-solid fa-clock', class: 'status-pending', spin: false };
+            const statusIcon = `<i class="${st.icon} ${st.spin ? 'fa-spin' : ''}" aria-hidden="true"></i>`;
+            const statusPill = `<span class="project-status-pill ${st.class}">${statusIcon} ${st.label}</span>`;
+
+            const durVal = p.durationSec || p.durationsec || 0;
+            const durFormatted = formatDuration(durVal);
+            const clipCountNum = p.clipCount || p.clipcount || 0;
+            const rawDate = p.createdAt || p.createdat;
+            const dateRelative = formatRelativeTime(rawDate);
+            const dateFull = rawDate ? new Date(rawDate).toLocaleString('pt-BR') : '';
+
+            // Thumbnail da esquerda
+            const thumbKey = p.firstThumbnailKey || p.firstthumbnailkey;
+            let thumbHtml = '';
+            if (thumbKey) {
+                const thumbUrl = (typeof getClipThumbnailUrl === 'function') ? getClipThumbnailUrl(thumbKey) : `${API_BASE}/videos/thumbnail/${encodeURIComponent(thumbKey)}`;
+                thumbHtml = `
+                    <div class="project-card-thumb" aria-hidden="true">
+                        <img src="${thumbUrl}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<span class=\\'project-card-thumb-placeholder\\'><i class=\\'fa-solid fa-clapperboard\\'></i></span>';">
+                    </div>
+                `;
+            } else {
+                thumbHtml = `
+                    <div class="project-card-thumb" aria-hidden="true">
+                        <span class="project-card-thumb-placeholder"><i class="fa-solid fa-clapperboard"></i></span>
+                    </div>
+                `;
+            }
+
+            // Bloco de motivo de erro se FAILED
+            const errorMsg = p.errorMessage || p.errormessage;
+            const errorHtml = (p.status === 'FAILED' && errorMsg) ? `
+                <div class="project-failed-reason" title="${escapeHtml(errorMsg)}">
+                    <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                    <span>${escapeHtml(errorMsg)}</span>
+                </div>
+            ` : '';
+
+            // Aviso de arquivos expirados
+            const isExpired = p.status === 'EXPIRED';
+            const expiredHtml = isExpired ? `
+                <div style="margin-top: 0.25rem;">
+                    <span class="project-expired-notice">
+                        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Arquivos expirados (retenção 24h)
+                    </span>
+                </div>
+            ` : '';
+
+            // Botão de ação
+            const actionBtnHtml = isExpired ? `
+                <button type="button" class="btn-project-open btn-project-expired" data-id="${escapeHtml(p.id)}" data-title="${escapeHtml(p.title || 'Vídeo')}" title="Visualizar informações do projeto">
+                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Abrir
+                </button>
+            ` : `
+                <button type="button" class="btn-project-open" data-id="${escapeHtml(p.id)}" data-title="${escapeHtml(p.title || 'Vídeo')}" title="Abrir projeto e visualizar cortes">
+                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Abrir
+                </button>
+            `;
 
             card.innerHTML = `
+                ${thumbHtml}
                 <div class="project-item-info">
                     <div class="project-item-title" title="${escapeHtml(p.title || 'Projeto sem título')}">
                         ${escapeHtml(p.title || 'Projeto sem título')}
                     </div>
                     <div class="project-item-meta">
-                        <span class="project-status-pill ${statusClass}">
-                            <i class="fa-solid ${statusLabel === 'COMPLETED' ? 'fa-check' : (statusLabel === 'FAILED' ? 'fa-xmark' : 'fa-spinner fa-spin')}" aria-hidden="true"></i>
-                            ${statusLabel}
-                        </span>
-                        <span><i class="fa-regular fa-clock" aria-hidden="true"></i> ${dur}</span>
-                        ${dateStr ? `<span><i class="fa-regular fa-calendar" aria-hidden="true"></i> ${dateStr}</span>` : ''}
+                        ${statusPill}
+                        <span title="Duração do vídeo de origem"><i class="fa-regular fa-clock" aria-hidden="true"></i> Duração: ${durFormatted}</span>
+                        <span title="Total de cortes gerados"><i class="fa-solid fa-bolt" aria-hidden="true"></i> ${clipCountNum} ${clipCountNum === 1 ? 'corte' : 'cortes'}</span>
+                        ${dateRelative ? `<span title="${dateFull}"><i class="fa-regular fa-calendar" aria-hidden="true"></i> ${dateRelative}</span>` : ''}
                     </div>
+                    ${errorHtml}
+                    ${expiredHtml}
                 </div>
                 <div class="project-item-actions">
-                    <button type="button" class="btn-project-open" data-id="${escapeHtml(p.id)}" data-title="${escapeHtml(p.title || 'Vídeo')}" title="Abrir projeto e visualizar cortes">
-                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Abrir
-                    </button>
+                    ${actionBtnHtml}
                     <button type="button" class="btn-project-delete" data-id="${escapeHtml(p.id)}" title="Excluir projeto permanentemente" aria-label="Excluir projeto">
                         <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
                     </button>
@@ -224,6 +366,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const openBtn = card.querySelector('.btn-project-open');
             if (openBtn) {
                 openBtn.addEventListener('click', () => {
+                    if (isExpired) {
+                        showToast("Este projeto teve seus arquivos temporários removidos após o período de retenção de 24h.", "info", 5000);
+                    }
                     if (projectsModal) projectsModal.classList.add('hidden');
                     localStorage.setItem('clipmaker_active_project', p.id);
                     localStorage.setItem('clipmaker_active_source_name', p.title || 'Vídeo');
@@ -233,32 +378,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // Clique em Excluir
+            // Clique em Excluir com confirmação acessível
             const delBtn = card.querySelector('.btn-project-delete');
             if (delBtn) {
-                delBtn.addEventListener('click', async () => {
-                    const confirmDel = confirm(`Deseja realmente excluir o projeto "${p.title || 'este projeto'}"? Todos os cortes gerados serão removidos.`);
-                    if (!confirmDel) return;
-
-                    delBtn.disabled = true;
-                    delBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
-                    try {
-                        const delRes = await fetch(`${API_BASE}/projects/${p.id}`, {
-                            method: 'DELETE',
-                            headers: { 'Authorization': `Bearer ${authToken}` }
-                        });
-                        if (!delRes.ok) throw new Error("Falha ao excluir projeto.");
-                        showToast("Projeto excluído com sucesso.", "success");
-                        card.remove();
-                        cachedUserProjects = cachedUserProjects.filter(item => item.id !== p.id);
-                        if (cachedUserProjects.length === 0) {
-                            renderProjectsList([]);
+                delBtn.addEventListener('click', () => {
+                    showDeleteConfirmModal(p.title || 'este projeto', async () => {
+                        delBtn.disabled = true;
+                        delBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                        try {
+                            const delRes = await fetch(`${API_BASE}/projects/${p.id}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${authToken}` }
+                            });
+                            if (!delRes.ok) throw new Error("Falha ao excluir projeto.");
+                            showToast("Projeto excluído com sucesso.", "success");
+                            card.remove();
+                            cachedUserProjects = cachedUserProjects.filter(item => item.id !== p.id);
+                            applyProjectsFilter();
+                        } catch (e) {
+                            showToast(e.message || "Erro ao excluir projeto.", "error");
+                            delBtn.disabled = false;
+                            delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
                         }
-                    } catch (e) {
-                        showToast(e.message || "Erro ao excluir projeto.", "error");
-                        delBtn.disabled = false;
-                        delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
-                    }
+                    });
                 });
             }
 
@@ -266,20 +408,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (projectsFilterInput) {
-        projectsFilterInput.addEventListener('input', (e) => {
-            const query = (e.target.value || '').trim().toLowerCase();
-            if (!query) {
-                renderProjectsList(cachedUserProjects);
-                return;
-            }
-            const filtered = cachedUserProjects.filter(p =>
+    function applyProjectsFilter() {
+        const query = (projectsFilterInput?.value || '').trim().toLowerCase();
+        const statusFilter = projectsStatusSelect?.value || 'ALL';
+
+        const filtered = cachedUserProjects.filter(p => {
+            const matchesQuery = !query ||
                 (p.title && p.title.toLowerCase().includes(query)) ||
-                (p.id && p.id.toLowerCase().includes(query)) ||
-                (p.status && p.status.toLowerCase().includes(query))
-            );
-            renderProjectsList(filtered);
+                (p.id && p.id.toLowerCase().includes(query));
+
+            if (!matchesQuery) return false;
+            if (statusFilter === 'ALL') return true;
+            if (statusFilter === 'READY') return p.status === 'READY' || p.status === 'COMPLETED';
+            if (statusFilter === 'PROCESSING') return ['DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING', 'PENDING'].includes(p.status);
+            if (statusFilter === 'FAILED') return p.status === 'FAILED';
+            if (statusFilter === 'EXPIRED') return p.status === 'EXPIRED';
+            return true;
         });
+        renderProjectsList(filtered);
+    }
+
+    if (projectsFilterInput) {
+        projectsFilterInput.addEventListener('input', applyProjectsFilter);
+    }
+
+    if (projectsStatusSelect) {
+        projectsStatusSelect.addEventListener('change', applyProjectsFilter);
     }
 
     if (btnProjectsNav) {

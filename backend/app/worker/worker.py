@@ -171,18 +171,34 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
 
         run_sync(update_project_status(project_id, "DOWNLOADING"))
 
-        # 1. Probe prévio com timeout controlado
-        probe_cmd = [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--no-playlist", "--print", "duration", "--", url]
+        # 1. Probe prévio com timeout controlado (extrai duração e título real do vídeo)
+        probe_cmd = [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--no-playlist", "--print", "%(duration)s\t%(title)s", "--", url]
         probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
         video_duration = 0.0
+        extracted_title = ""
         if probe_res.returncode == 0:
-            try:
-                video_duration = float(probe_res.stdout.strip() or "0")
-            except ValueError:
-                pass
+            output_line = probe_res.stdout.strip()
+            if output_line:
+                parts = output_line.split("\t", 1)
+                try:
+                    video_duration = float(parts[0].strip() or "0")
+                except ValueError:
+                    video_duration = 0.0
+                if len(parts) > 1:
+                    extracted_title = parts[1].strip()
 
         if video_duration > max_duration_sec:
             raise ValueError(f"O vídeo excede o limite máximo permitido de {max_duration_sec} segundos.")
+
+        # Sanitização do título do vídeo
+        import re
+        from urllib.parse import urlparse
+        from datetime import datetime
+        if extracted_title:
+            clean_title = re.sub(r'<[^>]*>', '', extracted_title).strip()[:120]
+        else:
+            netloc = urlparse(url).netloc or "Vídeo Online"
+            clean_title = f"{netloc} ({datetime.now().strftime('%d/%m/%Y')})"
 
         # 2. Download otimizado com no máximo 1 retry apenas para falhas de rede transitórias
         max_height = getattr(settings, "MAX_SOURCE_HEIGHT", 1080)
@@ -241,8 +257,8 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         if actual_duration > max_duration_sec:
             raise ValueError(f"O vídeo excede a duração máxima permitida ({actual_duration:.1f}s > {max_duration_sec}s).")
 
-        run_sync(update_project_source(project_id, safe_filename, actual_duration))
-        logger.info(f"[INGEST] Download concluído para {project_id}: {safe_filename} ({actual_duration:.1f}s)")
+        run_sync(update_project_source(project_id, safe_filename, actual_duration, title=clean_title))
+        logger.info(f"[INGEST] Download concluído para {project_id}: {safe_filename} ({actual_duration:.1f}s) - Título: {clean_title}")
 
         # 4. Execução do pipeline completo
         clips = process_video_full_pipeline(input_path, temp_dir, project_id, aspect_ratio, source_url=url)
@@ -253,7 +269,9 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
     except Exception as e:
         logger.exception(f"Erro técnico no processamento por URL para {project_id}: {e}")
         friendly_error = categorize_error(e)
+        from backend.app.db.db_service import refund_project_credits
         run_sync(update_project_status(project_id, "FAILED", friendly_error))
+        run_sync(refund_project_credits(project_id))
         if os.path.exists(input_path):
             try: os.remove(input_path)
             except OSError: pass
@@ -298,9 +316,10 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
         logger.exception(f"Erro técnico ao processar projeto {project_id}: {e}")
         friendly_error = categorize_error(e)
         from backend.app.core.loop import run_sync
-        from backend.app.db.db_service import update_project_status
+        from backend.app.db.db_service import update_project_status, refund_project_credits
         run_sync(update_project_status(project_id, "FAILED", friendly_error))
-        logger.info(f"Status do projeto {project_id} atualizado para FAILED ({friendly_error})")
+        run_sync(refund_project_credits(project_id))
+        logger.info(f"Status do projeto {project_id} atualizado para FAILED e crédito estornado ({friendly_error})")
         
     finally:
         _cleanup_runtime()

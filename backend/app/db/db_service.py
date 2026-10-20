@@ -449,15 +449,110 @@ async def update_project_source(project_id: str, source_file_key: str, duration_
         )
 
 
-async def get_user_projects(user_id: str) -> List[Dict[str, Any]]:
+async def refund_project_credits(project_id: str) -> bool:
+    """
+    Estorno automático e IDEMPOTENTE de créditos quando um projeto falha (status FAILED).
+    Verifica a flag `credits_refunded`. Se já foi estornado, não faz nada.
+    Executa o estorno atomicamente via UPDATE condicional.
+    """
+    if not _is_valid_uuid(project_id):
+        return False
+    db = await get_backend()
+    proj = await db.fetchrow("SELECT id, userId, credits_refunded FROM projects WHERE id = $1", project_id)
+    if not proj:
+        return False
+
+    if bool(proj.get("credits_refunded")):
+        logger.debug(f"[ESTORNO] Projeto {project_id} já teve créditos estornados anteriormente. Operação idempotente mantida.")
+        return False
+
+    user_id = proj.get("userid")
+    if not user_id:
+        return False
+
+    # Marca como estornado atomicamente
+    await db.execute(
+        "UPDATE projects SET credits_refunded = TRUE, updatedAt = CURRENT_TIMESTAMP WHERE id = $1 AND (credits_refunded IS NULL OR credits_refunded = FALSE)",
+        project_id
+    )
+    # Adiciona 1 crédito ao usuário
+    await add_user_credits(user_id, amount=1)
+    logger.info(f"[ESTORNO] 1 crédito estornado para o usuário {user_id} referente ao projeto {project_id}.")
+    return True
+
+
+async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Lista projetos do usuário em uma única consulta (sem N+1), agregando quantidade de clipes
+    e miniatura inicial, retornando dados em camelCase e paginados.
+    """
     if not _is_valid_uuid(user_id):
         return []
     db = await get_backend()
-    rows = await db.fetch(
-        "SELECT id, userId, title, sourceUrl, sourceFileKey, durationSec, status, errorMessage, createdAt, updatedAt FROM projects WHERE userId = $1 ORDER BY createdAt DESC",
-        user_id
-    )
-    return rows
+    limit = max(1, min(100, int(limit)))
+
+    if cursor and _is_valid_uuid(cursor):
+        query = """
+            SELECT 
+                p.id,
+                p.title,
+                p.sourceUrl,
+                p.durationSec,
+                p.status,
+                p.errorMessage,
+                p.createdAt,
+                p.updatedAt,
+                COUNT(c.id) AS clipCount,
+                MIN(CASE WHEN c.thumbnail_key IS NOT NULL AND c.thumbnail_key != '' THEN c.thumbnail_key END) AS firstThumbnailKey
+            FROM projects p
+            LEFT JOIN clips c ON p.id = c.projectId
+            WHERE p.userId = $1
+              AND p.createdAt < (SELECT createdAt FROM projects WHERE id = $2)
+            GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
+            ORDER BY p.createdAt DESC
+            LIMIT $3
+        """
+        rows = await db.fetch(query, user_id, cursor, limit)
+    else:
+        query = """
+            SELECT 
+                p.id,
+                p.title,
+                p.sourceUrl,
+                p.durationSec,
+                p.status,
+                p.errorMessage,
+                p.createdAt,
+                p.updatedAt,
+                COUNT(c.id) AS clipCount,
+                MIN(CASE WHEN c.thumbnail_key IS NOT NULL AND c.thumbnail_key != '' THEN c.thumbnail_key END) AS firstThumbnailKey
+            FROM projects p
+            LEFT JOIN clips c ON p.id = c.projectId
+            WHERE p.userId = $1
+            GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
+            ORDER BY p.createdAt DESC
+            LIMIT $2
+        """
+        rows = await db.fetch(query, user_id, limit)
+
+    projects = []
+    for r in rows:
+        created_val = r.get("createdat") or r.get("createdAt")
+        updated_val = r.get("updatedat") or r.get("updatedAt")
+        
+        projects.append({
+            "id": r.get("id"),
+            "title": r.get("title") or "Sem título",
+            "status": r.get("status"),
+            "durationSec": float(r.get("durationsec") or 0.0),
+            "clipCount": int(r.get("clipcount") or 0),
+            "firstThumbnailKey": r.get("firstthumbnailkey") or "",
+            "errorMessage": r.get("errormessage") or "",
+            "createdAt": created_val.isoformat() if hasattr(created_val, "isoformat") else str(created_val or ""),
+            "updatedAt": updated_val.isoformat() if hasattr(updated_val, "isoformat") else str(updated_val or ""),
+            "sourceUrl": r.get("sourceurl") or ""
+        })
+    return projects
 
 
 async def delete_project(project_id: str, user_id: str) -> bool:
@@ -859,7 +954,8 @@ async def fail_stale_projects(stale_minutes: int = 60) -> int:
             "UPDATE projects SET status = 'FAILED', errorMessage = $1, updatedAt = CURRENT_TIMESTAMP WHERE id = $2",
             friendly_msg, pid
         )
-        logger.warning(f"[WATCHDOG] Projeto {pid} marcado como FAILED (inativo há mais de {stale_minutes} min).")
+        await refund_project_credits(pid)
+        logger.warning(f"[WATCHDOG] Projeto {pid} marcado como FAILED e crédito estornado se devido (inativo há mais de {stale_minutes} min).")
 
     return len(stale_ids)
 

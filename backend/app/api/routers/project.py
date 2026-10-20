@@ -55,9 +55,19 @@ class ReRenderRequest(BaseModel):
 
 @router.get("")
 @router.get("/")
-async def list_user_projects(current_user: dict = Depends(get_current_user)):
-    projects = await get_user_projects(str(current_user["id"]))
-    return {"status": "success", "projects": projects}
+async def list_user_projects(
+    limit: int = 50,
+    cursor: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    projects = await get_user_projects(str(current_user["id"]), limit=limit, cursor=cursor)
+    next_cursor = projects[-1]["id"] if len(projects) == limit else None
+    return {
+        "status": "success",
+        "projects": projects,
+        "nextCursor": next_cursor,
+        "hasMore": len(projects) == limit
+    }
 
 
 @router.post("")
