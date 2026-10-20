@@ -36,15 +36,29 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(RateLimitExceeded)
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning("Limite de requisições excedido em %s %s: %s", request.method, request.url.path, exc.detail)
+    return JSONResponse(
+        status_code=429,
+        content={
+            "detail": "Limite de requisições excedido. Por favor, aguarde alguns instantes e tente novamente.",
+            "error": "rate_limit_exceeded"
+        }
+    )
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, RateLimitExceeded):
+        return await custom_rate_limit_handler(request, exc)
     logger.exception("Erro não tratado em %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "Erro interno do servidor."})
 
 
 # Rate Limiter
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
 
 # CORS
 cors_origins = [origin.strip() for origin in settings.ALLOWED_ORIGINS.split(",") if origin.strip()]

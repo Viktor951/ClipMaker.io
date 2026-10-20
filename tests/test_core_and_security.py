@@ -1,3 +1,4 @@
+import pytest
 from datetime import timedelta
 from backend.app.core.security import (
     get_password_hash,
@@ -95,4 +96,37 @@ def test_srt_timestamp_formatting():
 def test_asset_versioning_hashes():
     from scripts.version_assets import update_asset_versions
     assert update_asset_versions(check_only=True) is True
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_exceeded_json_handler():
+    from slowapi.errors import RateLimitExceeded
+    from unittest.mock import MagicMock
+    from backend.app.main import custom_rate_limit_handler
+    from starlette.requests import Request
+
+    mock_limit = MagicMock(error_message="5 per 1 minute")
+    exc = RateLimitExceeded(mock_limit)
+    scope = {"type": "http", "method": "POST", "path": "/api/v1/auth/login", "headers": []}
+    req = Request(scope)
+
+    resp = await custom_rate_limit_handler(req, exc)
+    assert resp.status_code == 429
+    import json
+    body = json.loads(resp.body.decode("utf-8"))
+    assert body["error"] == "rate_limit_exceeded"
+    assert "Limite de requisições excedido" in body["detail"]
+
+
+def test_worker_resolution_categorization():
+    from backend.app.worker.worker import categorize_error
+    err = ValueError("A resolução do vídeo (3840x2160) excede a dimensão máxima permitida de 2160px.")
+    friendly = categorize_error(err)
+    assert "resolução do vídeo excede o limite máximo" in friendly
+
+
+def test_cleanup_database_retention():
+    from scripts.cleanup import cleanup_database_retention
+    # Deve executar a rotina sem disparar exceções
+    cleanup_database_retention()
 

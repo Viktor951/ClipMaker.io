@@ -1,23 +1,43 @@
 import os
 import time
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEMP_DIR = os.getenv("TEMP_DIR", os.path.join(BASE_DIR, "backend", "temp_videos"))
 MAX_AGE_HOURS = int(os.getenv("CLEANUP_MAX_AGE_HOURS", "24"))
 
+# Diretórios temporários candidatos (inclui disco D: em produção e fallback local)
+CANDIDATE_TEMP_DIRS = [
+    os.getenv("TEMP_DIR"),
+    os.getenv("CLIPMAKER_TEMP_VIDEOS"),
+    os.path.join(BASE_DIR, "backend", "temp_videos"),
+    os.path.join(os.getenv("DATA_ROOT", "D:/docker-data/clipmaker"), "temp_videos"),
+    "D:/docker-data/clipmaker/temp_videos",
+    "D:\\docker-data\\clipmaker\\temp_videos"
+]
+
+
 def cleanup_old_files():
-    print("[CLEANUP] Iniciando rotina de limpeza de arquivos antigos...")
+    """Limpa arquivos de vídeo temporários e miniaturas que excederam a idade máxima permitida."""
+    print("[CLEANUP] Iniciando rotina de limpeza de arquivos temporários...")
     now = time.time()
-    
-    # Limpa arquivos físicos do diretório
-    if os.path.exists(TEMP_DIR):
-        for filename in os.listdir(TEMP_DIR):
-            filepath = os.path.join(TEMP_DIR, filename)
+    cleaned_dirs = set()
+
+    for directory in CANDIDATE_TEMP_DIRS:
+        if not directory or not os.path.exists(directory):
+            continue
+        real_dir = os.path.abspath(directory)
+        if real_dir in cleaned_dirs:
+            continue
+        cleaned_dirs.add(real_dir)
+        print(f"[CLEANUP] Varrendo diretório temporário: {real_dir}")
+
+        for filename in os.listdir(real_dir):
+            filepath = os.path.join(real_dir, filename)
             if os.path.isfile(filepath):
                 file_age = now - os.path.getmtime(filepath)
                 if file_age > (MAX_AGE_HOURS * 3600):
                     try:
                         os.remove(filepath)
-                        print(f"[CLEANUP] Arquivo removido: {filename}")
+                        print(f"[CLEANUP] Arquivo removido: {filename} ({file_age / 3600:.1f}h de idade)")
                     except Exception as e:
                         print(f"[CLEANUP] Erro ao remover {filename}: {e}")
 
@@ -36,15 +56,21 @@ def check_stale_projects_watchdog():
 
 
 def cleanup_database_retention():
-    """Rotina de retenção LGPD: apaga projetos e transcrições com mais de 30 dias."""
+    """
+    Rotina de retenção e expurgo de dados (Art. 16 da LGPD):
+    Apaga projetos, clipes e transcrições com mais de 30 dias de inatividade.
+    """
+    print("[CLEANUP/LGPD] Iniciando expurgo de banco de dados (retenção > 30 dias - Art. 16 LGPD)...")
     try:
         from backend.app.core.loop import run_sync
         from backend.app.db.db_service import cleanup_old_db_records
         max_days = int(os.getenv("RETENTION_MAX_DAYS", "30"))
         res = run_sync(cleanup_old_db_records(max_age_days=max_days))
-        print(f"[CLEANUP/LGPD] Retenção concluída: {res.get('deleted_projects', 0)} projetos e {res.get('deleted_transcriptions', 0)} transcrições removidos.")
+        deleted_p = res.get('deleted_projects', 0)
+        deleted_t = res.get('deleted_transcriptions', 0)
+        print(f"[CLEANUP/LGPD] Expurgo concluído com sucesso: {deleted_p} projeto(s) e {deleted_t} transcrição(ões) apagados (dados com mais de {max_days} dias).")
     except Exception as e:
-        print(f"[CLEANUP/LGPD] Limpeza de banco ignorada ou indisponível: {e}")
+        print(f"[CLEANUP/LGPD] Limpeza de banco de dados ignorada ou indisponível: {e}")
 
 
 if __name__ == "__main__":

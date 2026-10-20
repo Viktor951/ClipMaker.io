@@ -97,6 +97,8 @@ def categorize_error(e: Exception) -> str:
         return "Falha na análise dos melhores momentos com IA."
     if "render" in err_str or "ffmpeg" in err_str:
         return "Falha na renderização do clipe."
+    if "resolução" in err_str or "resolucao" in err_str or "dimens" in err_str:
+        return "A resolução do vídeo excede o limite máximo permitido (4K / 2160p)."
     if "duração máxima" in err_str or "limite de duração" in err_str or "excede" in err_str:
         return "O vídeo excede os limites de duração permitidos."
     if "arquivo" in err_str and ("vazio" in err_str or "não encontrado" in err_str or "corrompido" in err_str):
@@ -231,8 +233,11 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         if not os.path.exists(input_path) or os.path.getsize(input_path) == 0:
             raise RuntimeError("O arquivo de vídeo baixado está vazio ou não foi gravado.")
 
-        # 3. Probe real no arquivo baixado
-        _, _, actual_duration = get_video_info(input_path)
+        # 3. Probe real no arquivo baixado e validação de limites (resolução e duração)
+        orig_w, orig_h, actual_duration = get_video_info(input_path)
+        max_dim = getattr(settings, "MAX_VIDEO_DIMENSION", 2160)
+        if orig_w > max_dim or orig_h > max_dim:
+            raise ValueError(f"A resolução do vídeo ({orig_w}x{orig_h}) excede a dimensão máxima permitida ({max_dim}px).")
         if actual_duration > max_duration_sec:
             raise ValueError(f"O vídeo excede a duração máxima permitida ({actual_duration:.1f}s > {max_duration_sec}s).")
 
@@ -263,8 +268,15 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
     logger.info(f"Iniciando processamento para o projeto: {project_id} (proporção: {aspect_ratio})")
     logger.info(f"Input: {input_path}")
     try:
+        from backend.app.services.video_service import get_video_info
+        from backend.app.core.config import settings
         from backend.app.services.engine_service import process_video_full_pipeline
-        
+
+        orig_w, orig_h, _ = get_video_info(input_path)
+        max_dim = getattr(settings, "MAX_VIDEO_DIMENSION", 2160)
+        if orig_w > max_dim or orig_h > max_dim:
+            raise ValueError(f"A resolução do vídeo ({orig_w}x{orig_h}) excede a dimensão máxima permitida ({max_dim}px).")
+
         clips = process_video_full_pipeline(input_path, temp_dir, project_id, aspect_ratio)
         logger.info(f"Sucesso! Clipes gerados para {project_id}: {len(clips)}")
         
