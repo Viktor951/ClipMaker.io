@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import re
+from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request, Query
 from fastapi.responses import FileResponse, Response
@@ -93,6 +94,38 @@ def _is_safe_public_url(url: str) -> bool:
         return False
 
 
+@asynccontextmanager
+async def _user_dispatch_lock(user_id: str):
+    """Lock atômico no Redis para prevenir condições de corrida (TOCTOU) no limite de concorrência."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    client = None
+    lock_key = f"lock:job_dispatch:{user_id}"
+    acquired = True
+    try:
+        import redis.asyncio as aioredis
+        client = aioredis.from_url(redis_url, socket_connect_timeout=0.5)
+        # Tenta adquirir lock por até 30s
+        acquired = await client.set(lock_key, "1", nx=True, ex=30)
+    except Exception:
+        # Fallback se Redis não estiver acessível (ex: testes locais)
+        acquired = True
+
+    if not acquired:
+        raise HTTPException(
+            status_code=429,
+            detail="Operação de agendamento em andamento. Aguarde alguns segundos."
+        )
+    try:
+        yield
+    finally:
+        if client and acquired:
+            try:
+                await client.delete(lock_key)
+                await client.aclose()
+            except Exception:
+                pass
+
+
 def _save_upload_file_sync(file_obj, destination_path: Path, max_size: int) -> int:
     """Gravação síncrona em blocos para execução em worker thread dedicada."""
     written = 0
@@ -121,75 +154,83 @@ async def process_video(
     if aspect_ratio not in ("9:16", "1:1", "16:9"):
         raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
 
-    # Limite de concorrência por usuário
     user_id = str(current_user["id"])
-    active_jobs = await count_active_projects_by_user(user_id)
-    if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+    async with _user_dispatch_lock(user_id):
+        # Limite de concorrência por usuário
+        active_jobs = await count_active_projects_by_user(user_id)
+        if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+            )
+
+        # Verificação de saldo de créditos
+        user_data = await get_user_by_id(user_id) or current_user
+        user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
+        if user_credits < 1:
+            raise HTTPException(
+                status_code=402,
+                detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
+            )
+
+        content_length = request.headers.get("content-length")
+        if content_length and int(content_length) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {settings.MAX_FILE_SIZE_MB}MB).")
+
+        safe_filename = f"{uuid.uuid4()}.mp4"
+        input_path = TEMP_DIR / safe_filename
+
+        try:
+            # Gravação assíncrona desacoplada do event loop via threadpool
+            await asyncio.to_thread(_save_upload_file_sync, file.file, input_path, MAX_FILE_SIZE)
+        except ValueError:
+            if input_path.exists():
+                input_path.unlink()
+            raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {settings.MAX_FILE_SIZE_MB}MB).")
+        except Exception as e:
+            if input_path.exists():
+                input_path.unlink()
+            logger.error(f"Erro ao salvar arquivo de upload: {e}")
+            raise HTTPException(status_code=500, detail="Erro interno ao salvar arquivo enviado.")
+        finally:
+            await file.close()
+
+        if not input_path.exists() or input_path.stat().st_size == 0:
+            if input_path.exists():
+                input_path.unlink()
+            raise HTTPException(status_code=400, detail="Arquivo vazio ou inválido.")
+
+        try:
+            # Extração de metadados/resolução/duração via ffprobe desacoplada do event loop
+            orig_w, orig_h, duration = await asyncio.to_thread(get_video_info, str(input_path))
+            max_dim = getattr(settings, "MAX_VIDEO_DIMENSION", 2160)
+            if orig_w > max_dim or orig_h > max_dim:
+                input_path.unlink()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"A resolução do vídeo ({orig_w}x{orig_h}) excede a dimensão máxima permitida ({max_dim}px)."
+                )
+            if duration > MAX_DURATION_SEC:
+                input_path.unlink()
+                raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração permitido.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            if input_path.exists():
+                input_path.unlink()
+            logger.warning(f"Vídeo inválido enviado: {e}")
+            raise HTTPException(status_code=400, detail="Arquivo de vídeo inválido ou corrompido.")
+
+        project_id = await create_project(
+            user_id=user_id,
+            title=file.filename or "Upload de Vídeo",
+            source_file_key=safe_filename,
+            duration_sec=duration
         )
+        await deduct_user_credits(user_id, amount=1)
 
-    # Verificação de saldo de créditos
-    user_data = await get_user_by_id(user_id) or current_user
-    user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
-    if user_credits < 1:
-        raise HTTPException(
-            status_code=402,
-            detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
-        )
-
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {settings.MAX_FILE_SIZE_MB}MB).")
-
-    safe_filename = f"{uuid.uuid4()}.mp4"
-    input_path = TEMP_DIR / safe_filename
-
-    try:
-        # Gravação assíncrona desacoplada do event loop via threadpool
-        await asyncio.to_thread(_save_upload_file_sync, file.file, input_path, MAX_FILE_SIZE)
-    except ValueError:
-        if input_path.exists():
-            input_path.unlink()
-        raise HTTPException(status_code=400, detail=f"Arquivo muito grande (Limite de {settings.MAX_FILE_SIZE_MB}MB).")
-    except Exception as e:
-        if input_path.exists():
-            input_path.unlink()
-        logger.error(f"Erro ao salvar arquivo de upload: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao salvar arquivo enviado.")
-    finally:
-        await file.close()
-
-    if not input_path.exists() or input_path.stat().st_size == 0:
-        if input_path.exists():
-            input_path.unlink()
-        raise HTTPException(status_code=400, detail="Arquivo vazio ou inválido.")
-
-    try:
-        # Extração de metadados/duração via ffprobe desacoplada do event loop
-        _, _, duration = await asyncio.to_thread(get_video_info, str(input_path))
-        if duration > MAX_DURATION_SEC:
-            input_path.unlink()
-            raise HTTPException(status_code=400, detail="O vídeo excede o limite de duração permitido.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        if input_path.exists():
-            input_path.unlink()
-        logger.warning(f"Vídeo inválido enviado: {e}")
-        raise HTTPException(status_code=400, detail="Arquivo de vídeo inválido ou corrompido.")
-
-    project_id = await create_project(
-        user_id=user_id,
-        title=file.filename or "Upload de Vídeo",
-        source_file_key=safe_filename,
-        duration_sec=duration
-    )
-    await deduct_user_credits(user_id, amount=1)
-
-    process_video_task(project_id, str(input_path), str(TEMP_DIR), aspect_ratio)
-    return {"status": "processing", "project_id": project_id}
+        process_video_task(project_id, str(input_path), str(TEMP_DIR), aspect_ratio)
+        return {"status": "processing", "project_id": project_id}
 
 
 @router.post("/upload-url/")
@@ -205,44 +246,45 @@ async def process_url(
     if aspect_ratio not in ("9:16", "1:1", "16:9"):
         raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
 
-    # Limite de concorrência por usuário
     user_id = str(current_user["id"])
-    active_jobs = await count_active_projects_by_user(user_id)
-    if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+    async with _user_dispatch_lock(user_id):
+        # Limite de concorrência por usuário
+        active_jobs = await count_active_projects_by_user(user_id)
+        if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+            )
+
+        # Verificação de saldo de créditos
+        user_data = await get_user_by_id(user_id) or current_user
+        user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
+        if user_credits < 1:
+            raise HTTPException(
+                status_code=402,
+                detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
+            )
+
+        clean_url = url.strip()
+        if not _is_safe_public_url(clean_url):
+            raise HTTPException(status_code=400, detail="URL inválida ou não permitida.")
+
+        safe_filename = f"{uuid.uuid4()}.mp4"
+
+        # Cria o projeto imediatamente com status inicial DOWNLOADING
+        project_id = await create_project(
+            user_id=user_id,
+            title="Importação por URL",
+            source_file_key=safe_filename,
+            duration_sec=0.0,
+            source_url=clean_url,
+            status="DOWNLOADING"
         )
+        await deduct_user_credits(user_id, amount=1)
 
-    # Verificação de saldo de créditos
-    user_data = await get_user_by_id(user_id) or current_user
-    user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
-    if user_credits < 1:
-        raise HTTPException(
-            status_code=402,
-            detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
-        )
-
-    clean_url = url.strip()
-    if not _is_safe_public_url(clean_url):
-        raise HTTPException(status_code=400, detail="URL inválida ou não permitida.")
-
-    safe_filename = f"{uuid.uuid4()}.mp4"
-
-    # Cria o projeto imediatamente com status inicial DOWNLOADING
-    project_id = await create_project(
-        user_id=user_id,
-        title="Importação por URL",
-        source_file_key=safe_filename,
-        duration_sec=0.0,
-        source_url=clean_url,
-        status="DOWNLOADING"
-    )
-    await deduct_user_credits(user_id, amount=1)
-
-    # Dispara a tarefa de download e probe assíncronos na fila do Huey, liberando a rota em < 15ms
-    download_and_process_url_task(project_id, clean_url, str(TEMP_DIR), aspect_ratio)
-    return {"status": "processing", "project_id": project_id, "initial_status": "DOWNLOADING"}
+        # Dispara a tarefa de download e probe assíncronos na fila do Huey, liberando a rota em < 15ms
+        download_and_process_url_task(project_id, clean_url, str(TEMP_DIR), aspect_ratio)
+        return {"status": "processing", "project_id": project_id, "initial_status": "DOWNLOADING"}
 
 
 @router.post("/signed-url/{clip_id}")
@@ -334,7 +376,7 @@ async def download_clip(
     disposition_type = "attachment" if download else "inline"
     download_filename = filename
     if download and clip_record.get("title"):
-        clean_title = re.sub(r'[\\/*?:"<>|]', "", clip_record["title"]).strip().replace(" ", "_")
+        clean_title = re.sub(r'[\r\n\\/*?:"<>|]', "", clip_record["title"]).strip().replace(" ", "_")
         if clean_title:
             download_filename = f"{clean_title[:60]}.mp4"
 

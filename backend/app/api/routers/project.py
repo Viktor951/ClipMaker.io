@@ -174,6 +174,13 @@ async def re_render_clip_endpoint(
         if payload.end_time > proj_dur + 2.0:
             raise HTTPException(status_code=400, detail="end_time excede a duração do vídeo original")
 
+    current_status = (clip.get("status") or "").upper()
+    if current_status in ("QUEUED", "RENDERING", "PROCESSING"):
+        raise HTTPException(
+            status_code=409,
+            detail="Este clipe já está na fila ou sendo renderizado. Aguarde a conclusão da tarefa atual."
+        )
+
     await update_clip_status(clip_id, "QUEUED")
     re_render_clip_task(clip_id, payload.model_dump())
     return {"status": "processing", "clip_id": clip_id, "aspect_ratio": payload.aspect_ratio}

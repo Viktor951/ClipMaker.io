@@ -170,7 +170,7 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
         run_sync(update_project_status(project_id, "DOWNLOADING"))
 
         # 1. Probe prévio com timeout controlado
-        probe_cmd = [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--print", "duration", "--", url]
+        probe_cmd = [sys.executable, "-m", "yt_dlp", "--force-ipv4", "--no-playlist", "--print", "duration", "--", url]
         probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
         video_duration = 0.0
         if probe_res.returncode == 0:
@@ -184,9 +184,12 @@ def download_and_process_url_task(project_id: str, url: str, temp_dir: str, aspe
 
         # 2. Download otimizado com no máximo 1 retry apenas para falhas de rede transitórias
         max_height = getattr(settings, "MAX_SOURCE_HEIGHT", 1080)
+        max_file_size_mb = getattr(settings, "MAX_FILE_SIZE_MB", 500)
         download_cmd = [
             sys.executable, "-m", "yt_dlp",
             "--force-ipv4",
+            "--no-playlist",
+            "--max-filesize", f"{max_file_size_mb}M",
             "--concurrent-fragments", "4",
             "--quiet", "--no-progress",
             "-f", f"bestvideo[height<={max_height}][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",

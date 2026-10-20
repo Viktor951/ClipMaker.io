@@ -105,8 +105,8 @@ def _get_fallback_cpu_params(parallelism: int = 1) -> dict:
     }
 
 def _ffmpeg_base() -> list:
-    """Prefixo padrão de todos os comandos FFmpeg: silencia logs para não encher buffers de RAM."""
-    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"]
+    """Prefixo padrão de todos os comandos FFmpeg: silencia logs para não encher buffers de RAM e restringe protocolos."""
+    return ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-protocol_whitelist", "file,crypto,data"]
 
 # ============================================================
 # Probe
@@ -114,7 +114,7 @@ def _ffmpeg_base() -> list:
 
 def get_video_info(input_path: str) -> tuple:
     try:
-        probe = ffmpeg.probe(input_path)
+        probe = ffmpeg.probe(input_path, **{"protocol_whitelist": "file,crypto,data"})
     except ffmpeg.Error as e:
         stderr_msg = e.stderr.decode("utf-8", errors="ignore") if isinstance(e.stderr, bytes) else str(e.stderr) if e.stderr else ""
         raise RuntimeError(f"FFprobe falhou: {stderr_msg}")
@@ -326,6 +326,9 @@ def escape_ffmpeg_path(path: str) -> str:
     escaped = os.path.abspath(path)
     escaped = escaped.replace("\\", "/")
     escaped = escaped.replace(":", "\\:")
+    escaped = escaped.replace("'", "\\'")
+    escaped = escaped.replace("[", "\\[")
+    escaped = escaped.replace("]", "\\]")
     return escaped
 
 # ============================================================
@@ -370,8 +373,8 @@ def _compute_crop_and_scale(orig_w: int, orig_h: int, aspect_ratio: str, quality
 # ============================================================
 
 def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec: float, end_sec: float, input_path: str, output_path: str, parallelism: int = 1):
-    """Executa FFmpeg com fallback automático para CPU se NVENC falhar."""
-    result = subprocess.run(primary_cmd, capture_output=True, text=True, timeout=3600)
+    """Executa FFmpeg com fallback automático para CPU se NVENC falhar (timeout 600s)."""
+    result = subprocess.run(primary_cmd, capture_output=True, text=True, timeout=600)
 
     if result.returncode != 0:
         encoding_params = get_encoding_params(parallelism)
@@ -392,7 +395,7 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
                 fallback_cmd.extend([f"-{k}", str(v)])
             fallback_cmd.append(output_path)
             
-            result_cpu = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=3600)
+            result_cpu = subprocess.run(fallback_cmd, capture_output=True, text=True, timeout=600)
             if result_cpu.returncode != 0:
                 raise RuntimeError(f"FFmpeg falhou com CPU. Erro:\n{result_cpu.stderr[-1000:]}")
         else:

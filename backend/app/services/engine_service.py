@@ -124,6 +124,9 @@ def process_video_full_pipeline(
     with timed("probe"):
         orig_w, orig_h, duration = video_service.get_video_info(input_path)
     logger.info(f"Vídeo: {orig_w}x{orig_h}, duração: {duration:.1f}s")
+    max_dim = getattr(settings, "MAX_VIDEO_DIMENSION", 2160)
+    if orig_w > max_dim or orig_h > max_dim:
+        raise ValueError(f"A resolução do vídeo ({orig_w}x{orig_h}) excede a dimensão máxima permitida ({max_dim}px).")
 
     # Identificar user_id e source_url a partir do projeto se não passados
     if project_id and not user_id:
