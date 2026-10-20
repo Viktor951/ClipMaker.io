@@ -62,3 +62,5 @@ node_modules/
 .DS_Store
 Thumbs.db
 scratch/
+revisao_saida/
+.ruff_cache/
