@@ -235,6 +235,18 @@ class SqliteBackend:
             await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_status_updated ON projects (status, updatedAt);")
         except Exception:
             pass
+        try:
+            await self._conn.execute("ALTER TABLE projects ADD COLUMN credits_refunded INTEGER DEFAULT 0;")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_clips_status ON clips (status);")
+        except Exception:
+            pass
+        try:
+            await self._conn.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status);")
+        except Exception:
+            pass
         await self._conn.commit()
 
     async def close(self):
@@ -949,5 +961,57 @@ async def cleanup_old_db_records(max_age_days: int = 30) -> Dict[str, int]:
 
     logger.info(f"[RETENÇÃO LGPD] Removidos {deleted_projects} projetos e {deleted_transcriptions} transcrições com mais de {max_age_days} dias.")
     return {"deleted_projects": deleted_projects, "deleted_transcriptions": deleted_transcriptions}
+
+
+async def mark_file_records_expired(deleted_filenames: List[str]) -> Dict[str, int]:
+    """
+    Marca no banco como 'EXPIRED' os clipes e projetos cujos arquivos físicos foram removidos pelo cleanup.
+    """
+    if not deleted_filenames:
+        return {"expired_clips": 0, "expired_projects": 0}
+
+    db = await get_backend()
+    expired_clips = 0
+    expired_projects = 0
+
+    for filename in deleted_filenames:
+        clean_name = os.path.basename(filename)
+        clip_id_cand = clean_name.replace("clip_", "").replace(".mp4", "").replace("thumb_", "").replace(".jpg", "")
+        try:
+            res_c = await db.execute(
+                "UPDATE clips SET status = 'EXPIRED' WHERE (renderedUrl = $1 OR id = $2) AND status != 'EXPIRED'",
+                clean_name, clip_id_cand
+            )
+            expired_clips += 1
+        except Exception as e:
+            logger.debug(f"Falha ao marcar clipe como expirado ({clean_name}): {e}")
+
+        try:
+            res_p = await db.execute(
+                "UPDATE projects SET status = 'EXPIRED' WHERE (sourceFileKey = $1 OR id = $2) AND status != 'EXPIRED'",
+                clean_name, clip_id_cand
+            )
+            expired_projects += 1
+        except Exception as e:
+            logger.debug(f"Falha ao marcar projeto como expirado ({clean_name}): {e}")
+
+    # Atualiza projetos com todos os clipes expirados para o status EXPIRED
+    try:
+        await db.execute("""
+            UPDATE projects
+            SET status = 'EXPIRED'
+            WHERE status = 'READY'
+              AND id IN (
+                  SELECT projectId FROM clips
+                  GROUP BY projectId
+                  HAVING COUNT(*) > 0 AND COUNT(CASE WHEN status != 'EXPIRED' THEN 1 END) = 0
+              )
+        """)
+    except Exception as e:
+        logger.debug(f"Falha ao sincronizar status de projetos expirados: {e}")
+
+    logger.info(f"[EXPIRADOS] Processados {len(deleted_filenames)} arquivos: {expired_clips} clipe(s) e {expired_projects} projeto(s) marcados como EXPIRED.")
+    return {"expired_clips": expired_clips, "expired_projects": expired_projects}
+
 
 

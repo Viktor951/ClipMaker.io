@@ -285,6 +285,42 @@
   box-shadow: 0 0 24px rgba(0, 240, 118, 0.4);
 }
 
+/* Overlay elegante para vídeos temporários expirados (retenção de 24h) */
+.clip-expired-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 1.5rem;
+  background: rgba(9, 10, 13, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--text-secondary);
+  z-index: 5;
+  pointer-events: none;
+}
+
+.clip-expired-overlay i {
+  font-size: 2.2rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.clip-expired-overlay span {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.clip-expired-overlay small {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
 /* Clip Badges (overlays) */
 .clip-badges {
   position: absolute;

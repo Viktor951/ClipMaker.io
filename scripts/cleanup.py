@@ -21,6 +21,7 @@ def cleanup_old_files():
     now = time.time()
     cleaned_dirs = set()
 
+    deleted_files = []
     for directory in CANDIDATE_TEMP_DIRS:
         if not directory or not os.path.exists(directory):
             continue
@@ -37,9 +38,19 @@ def cleanup_old_files():
                 if file_age > (MAX_AGE_HOURS * 3600):
                     try:
                         os.remove(filepath)
+                        deleted_files.append(filename)
                         print(f"[CLEANUP] Arquivo removido: {filename} ({file_age / 3600:.1f}h de idade)")
                     except Exception as e:
                         print(f"[CLEANUP] Erro ao remover {filename}: {e}")
+
+    if deleted_files:
+        try:
+            from backend.app.core.loop import run_sync
+            from backend.app.db.db_service import mark_file_records_expired
+            res = run_sync(mark_file_records_expired(deleted_files))
+            print(f"[CLEANUP/DB] Marcados no banco como EXPIRED: {res.get('expired_clips', 0)} clipe(s), {res.get('expired_projects', 0)} projeto(s).")
+        except Exception as e:
+            print(f"[CLEANUP/DB] Atualização de status no banco ignorada ou indisponível: {e}")
 
 
 def check_stale_projects_watchdog():

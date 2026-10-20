@@ -273,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderProjectsList(cachedUserProjects);
                 return;
             }
-            const filtered = cachedUserProjects.filter(p => 
+            const filtered = cachedUserProjects.filter(p =>
                 (p.title && p.title.toLowerCase().includes(query)) ||
                 (p.id && p.id.toLowerCase().includes(query)) ||
                 (p.status && p.status.toLowerCase().includes(query))
@@ -351,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         headers: { "Content-Type": "application/x-www-form-urlencoded" },
                         body: formData
                     });
-                    
+
                     const resData = await res.json().catch(() => null);
                     if (!res.ok) {
                         throw new Error(parseApiError(resData, "Erro ao entrar"));
@@ -558,7 +558,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function resetUIState() {
         isProcessing = false;
         if (currentUploadXhr) {
-            try { currentUploadXhr.abort(); } catch (e) {}
+            try { currentUploadXhr.abort(); } catch (e) { }
             currentUploadXhr = null;
         }
         const cancelBtn = document.getElementById('btn-cancel-upload');
@@ -590,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const data = JSON.parse(xhr.responseText);
                     onSuccess(data);
-                } catch(e) {
+                } catch (e) {
                     onError(new Error("Resposta inválida do servidor."));
                 }
             } else {
@@ -598,7 +598,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const err = JSON.parse(xhr.responseText);
                     if (err.detail) detail = err.detail;
-                } catch(e) {}
+                } catch (e) { }
                 onError(new Error(detail || `Erro no upload (${xhr.status})`));
             }
         });
@@ -671,7 +671,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function startProcessingPipeline(fileOrUrl, isFile) {
         if (isProcessing) return;
-        
+
         if (!authToken) {
             showToast("Por favor, faça login ou cadastre-se para gerar clipes!", "info");
             authModal.classList.remove('hidden');
@@ -679,7 +679,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         isProcessing = true;
-        
+
         if (btnGenerateUrl) {
             btnGenerateUrl.disabled = true;
             btnGenerateUrl.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
@@ -771,8 +771,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const errData = await response.json();
                     if (errData.detail) errDetail = errData.detail;
-                } catch(e) {}
-                
+                } catch (e) { }
+
                 if (response.status === 401) {
                     authToken = null;
                     localStorage.removeItem('clipmaker_token');
@@ -784,9 +784,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 throw new Error(errDetail);
             }
-            
+
             const data = await response.json();
-            
+
             if (data.status === "processing" && data.project_id) {
                 const sourceName = fileOrUrl;
                 localStorage.setItem('clipmaker_active_project', data.project_id);
@@ -911,7 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     resetUIState();
                 } else {
                     if (percentageEl) percentageEl.classList.add('pulse-animation');
-                    
+
                     const queuePos = data.queuePosition || 1;
                     const etaSec = data.estimatedTimeSec || 30;
                     const queueSuffix = queuePos > 1 ? ` (Fila #${queuePos} • ~${etaSec}s)` : ` (~${etaSec}s restantes)`;

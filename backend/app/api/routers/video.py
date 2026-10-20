@@ -309,6 +309,16 @@ async def generate_signed_url_endpoint(
     if str(clip_record["userId"]) != str(current_user["id"]):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
+    # Verifica se o arquivo de vídeo ainda existe fisicamente no disco ou se já expirou
+    rendered_url = clip_record.get("renderedUrl") or f"clip_{real_id}.mp4"
+    filename = os.path.basename(rendered_url)
+    file_path = (TEMP_DIR / filename).resolve()
+    if clip_record.get("status") == "EXPIRED" or not file_path.exists():
+        raise HTTPException(
+            status_code=410,
+            detail={"code": "clip_expired", "message": "Arquivo de vídeo expirado ou não encontrado no servidor."}
+        )
+
     sig = create_signed_url_token(str(current_user["id"]), real_id, expires_in_sec=86400)
     return {
         "status": "success",
@@ -369,8 +379,11 @@ async def download_clip(
     except ValueError:
         raise HTTPException(status_code=403, detail="Acesso a caminho de arquivo não permitido.")
 
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo de vídeo não encontrado.")
+    if clip_record.get("status") == "EXPIRED" or not file_path.exists():
+        raise HTTPException(
+            status_code=410,
+            detail={"code": "clip_expired", "message": "Arquivo de vídeo expirado ou não encontrado no servidor."}
+        )
 
     # Determina cabeçalho de download (attachment) vs visualização em player (inline)
     disposition_type = "attachment" if download else "inline"
@@ -442,8 +455,11 @@ async def get_thumbnail(
     except ValueError:
         raise HTTPException(status_code=403, detail="Acesso a caminho não permitido.")
 
-    if not thumb_path.exists():
-        raise HTTPException(status_code=404, detail="Arquivo de miniatura não encontrado.")
+    if clip_record.get("status") == "EXPIRED" or not thumb_path.exists():
+        raise HTTPException(
+            status_code=410,
+            detail={"code": "clip_expired", "message": "Arquivo de miniatura expirado ou não encontrado no servidor."}
+        )
 
     return FileResponse(
         path=str(thumb_path),

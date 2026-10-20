@@ -1,5 +1,8 @@
+import asyncio
+import json
+import urllib.request
+import urllib.parse
 from typing import Optional
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -24,17 +27,22 @@ async def _verify_turnstile(token: Optional[str], client_ip: Optional[str] = Non
     if not token:
         return False
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(
+        def _request_turnstile():
+            post_data = urllib.parse.urlencode({
+                "secret": settings.TURNSTILE_SECRET_KEY,
+                "response": token,
+                "remoteip": client_ip or ""
+            }).encode("utf-8")
+            req = urllib.request.Request(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                data={
-                    "secret": settings.TURNSTILE_SECRET_KEY,
-                    "response": token,
-                    "remoteip": client_ip or ""
-                }
+                data=post_data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"}
             )
-            data = res.json()
-            return bool(data.get("success", False))
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+
+        data = await asyncio.to_thread(_request_turnstile)
+        return bool(data.get("success", False))
     except Exception:
         return False
 

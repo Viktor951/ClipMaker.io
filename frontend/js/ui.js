@@ -25,7 +25,7 @@ function showToast(message, type = 'info', duration = 4500) {
     const isError = type === 'error';
     const roleAttr = isError ? 'alert' : 'status';
     const ariaLive = isError ? 'assertive' : 'polite';
-    
+
     toast.className = `toast toast-${type}`;
     toast.setAttribute('role', roleAttr);
     toast.setAttribute('aria-live', ariaLive);
@@ -76,16 +76,42 @@ function showToast(message, type = 'info', duration = 4500) {
 
 window.showToast = showToast;
 
+const signedUrlQueue = [];
+let activeSignedUrlCount = 0;
+const MAX_CONCURRENT_SIGNED_URLS = 2;
+
 async function fetchSignedUrl(clipId) {
-    const token = localStorage.getItem('clipmaker_token') || '';
-    const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(clipId)}/signed-url`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`
+    if (activeSignedUrlCount >= MAX_CONCURRENT_SIGNED_URLS) {
+        await new Promise(resolve => signedUrlQueue.push(resolve));
+    }
+    activeSignedUrlCount++;
+    try {
+        const token = localStorage.getItem('clipmaker_token') || '';
+        const res = await fetch(`${API_BASE}/videos/${encodeURIComponent(clipId)}/signed-url`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        if (!res.ok) {
+            if (res.status === 410) {
+                const errData = await res.json().catch(() => ({}));
+                const msg = errData?.detail?.message || 'Este clipe expirou ou não está mais disponível.';
+                const err = new Error(msg);
+                err.status = 410;
+                err.code = 'clip_expired';
+                throw err;
+            }
+            throw new Error('Falha ao obter URL assinada.');
         }
-    });
-    if (!res.ok) throw new Error('Falha ao obter URL assinada.');
-    return await res.json();
+        return await res.json();
+    } finally {
+        activeSignedUrlCount--;
+        if (signedUrlQueue.length > 0) {
+            const next = signedUrlQueue.shift();
+            next();
+        }
+    }
 }
 
 function resolveMediaUrl(url) {
@@ -158,19 +184,26 @@ const UI = {
 
             const card = document.createElement('div');
             card.className = 'clip-card';
-            
+
             const scoreClass = (clip.viralScore || 0) >= 90 ? 'viral-score-high' : 'viral-score-med';
             const cardRatio = clip.aspectRatio === '16:9' ? '16/9' : (clip.aspectRatio === '1:1' ? '1/1' : '9/16');
-            
+
             // Item 3: Exibe sempre o título e o gancho reais da IA
             const titleSafe = escapeHtml(clip.title || 'Corte Viral (IA)');
             const hookSafe = escapeHtml(clip.hookReason || '');
-            
-            const videoUrl = escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier)));
+
+            const isExpired = clip.status === 'EXPIRED' || clip.videoExists === false || clip.expired === true;
+            const videoUrl = !isExpired ? escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier))) : '';
             const thumbnailUrl = escapeHtml(resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier)));
-            // Card com vídeo HTML5 e overlay de play
-            const mediaContent = `
-                <video src="${videoUrl}" poster="${thumbnailUrl}" preload="metadata" playsinline controls class="clip-card-video"></video>
+            // Card com vídeo HTML5 e overlay de play ou estado expirado
+            const mediaContent = isExpired ? `
+                <div class="clip-expired-overlay" role="status" aria-label="Este clipe expirou ou não está mais disponível">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                    <span>Este clipe expirou ou não está mais disponível</span>
+                    <small>Retenção de segurança de 24h</small>
+                </div>
+            ` : `
+                <video data-src="${videoUrl}" poster="${thumbnailUrl}" preload="none" playsinline controls class="clip-card-video lazy-video"></video>
                 <div class="clip-overlay-play" title="Assistir e Editar Clipe">
                     <i class="fa-solid fa-play"></i>
                 </div>
@@ -211,22 +244,86 @@ const UI = {
                     if (e.target.closest('button') || e.target.closest('.clip-card-actions')) {
                         return;
                     }
+                    if (isExpired || clip.videoExists === false || card.querySelector('.clip-expired-overlay')) {
+                        showToast('Este corte expirou por segurança (retenção de 24h). Gere um novo projeto para baixá-lo ou editá-lo.', 'warning');
+                        return;
+                    }
                     UI.openEditorModal(clip);
                 });
             }
 
-            // Tratamento de renovação automática se o vídeo der erro (ex: URL expirada)
-            const cardVideo = card.querySelector('video');
+            // Lazy loading do elemento de vídeo quando visível no viewport
+            const cardVideo = card.querySelector('video.lazy-video');
             if (cardVideo) {
+                if ('IntersectionObserver' in window) {
+                    const observer = new IntersectionObserver((entries, obs) => {
+                        entries.forEach(entry => {
+                            if (entry.isIntersecting) {
+                                if (cardVideo.dataset.src && !cardVideo.src) {
+                                    cardVideo.src = cardVideo.dataset.src;
+                                }
+                                obs.unobserve(cardVideo);
+                            }
+                        });
+                    }, { rootMargin: '100px' });
+                    observer.observe(cardVideo);
+                } else if (cardVideo.dataset.src) {
+                    cardVideo.src = cardVideo.dataset.src;
+                }
+
+                let retryAttempted = false;
+
+                const markCardExpired = () => {
+                    cardVideo.removeAttribute('src');
+                    cardVideo.removeAttribute('data-src');
+                    cardVideo.load();
+                    const preview = card.querySelector('.clip-preview-container');
+                    if (preview && !preview.querySelector('.clip-expired-overlay')) {
+                        const playOverlay = preview.querySelector('.clip-overlay-play');
+                        if (playOverlay) playOverlay.remove();
+                        const overlay = document.createElement('div');
+                        overlay.className = 'clip-expired-overlay';
+                        overlay.setAttribute('role', 'status');
+                        overlay.setAttribute('aria-label', 'Este clipe expirou ou não está mais disponível');
+                        overlay.innerHTML = `
+                            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                            <span>Este clipe expirou ou não está mais disponível</span>
+                            <small>Retenção de segurança de 24h</small>
+                        `;
+                        preview.appendChild(overlay);
+                    }
+                    clip.videoExists = false;
+                    clip.status = 'EXPIRED';
+                };
+
                 cardVideo.addEventListener('error', async () => {
+                    if (retryAttempted || !cardVideo.src) {
+                        markCardExpired();
+                        return;
+                    }
+                    retryAttempted = true;
+
+                    // Verifica se o erro foi por assinatura expirada (401/403) ou arquivo ausente (404/410)
                     try {
-                        const data = await fetchSignedUrl(clipIdentifier);
-                        if (data && data.download_url) {
-                            const freshUrl = resolveMediaUrl(data.download_url);
-                            clip.videoUrl = freshUrl;
-                            cardVideo.src = freshUrl;
+                        const headCheck = await fetch(cardVideo.src, { method: 'HEAD' });
+                        if (headCheck.status === 404 || headCheck.status === 410) {
+                            markCardExpired();
+                            return;
                         }
-                    } catch (e) {}
+                        if (headCheck.status === 401 || headCheck.status === 403) {
+                            const data = await fetchSignedUrl(clipIdentifier);
+                            if (data && data.download_url) {
+                                const freshUrl = resolveMediaUrl(data.download_url);
+                                if (freshUrl && freshUrl !== cardVideo.src) {
+                                    clip.videoUrl = freshUrl;
+                                    cardVideo.src = freshUrl;
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (e) { }
+
+                    markCardExpired();
                 });
             }
 
@@ -235,6 +332,10 @@ const UI = {
             if (editBtn) {
                 editBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
+                    if (isExpired || clip.videoExists === false || card.querySelector('.clip-expired-overlay')) {
+                        showToast('Este corte expirou por segurança (retenção de 24h). Gere um novo projeto para baixá-lo ou editá-lo.', 'warning');
+                        return;
+                    }
                     UI.openEditorModal(clip);
                 });
             }
@@ -243,19 +344,21 @@ const UI = {
             if (downloadBtn) {
                 downloadBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
+                    if (isExpired || clip.videoExists === false || card.querySelector('.clip-expired-overlay')) {
+                        showToast('O arquivo deste clipe expirou por segurança (retenção de 24h). Gere um novo projeto para baixá-lo.', 'warning');
+                        return;
+                    }
+
                     const origHtml = downloadBtn.innerHTML;
                     downloadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Baixando...';
                     downloadBtn.disabled = true;
 
                     try {
-                        let downloadUrl = '';
-                        try {
-                            const data = await fetchSignedUrl(clipIdentifier);
-                            downloadUrl = resolveMediaUrl(data.download_url);
-                        } catch (err) {
-                            downloadUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
+                        const data = await fetchSignedUrl(clipIdentifier);
+                        if (!data || !data.download_url) {
+                            throw new Error('URL de download não disponível.');
                         }
-
+                        const downloadUrl = resolveMediaUrl(data.download_url);
                         const safeTitle = (clip.title || 'clipe')
                             .replace(/[\\/*?:"<>|]/g, '')
                             .trim()
@@ -278,7 +381,7 @@ const UI = {
         const modal = document.getElementById('editor-modal');
         const transcriptContainer = document.getElementById('transcript-container');
         const videoContainer = document.querySelector('.video-preview-container');
-        
+
         if (!modal || !transcriptContainer) return;
 
         const clipIdentifier = clip.clipId || clip.id;
@@ -312,26 +415,45 @@ const UI = {
             };
         }
 
-        // Reconstruir o video preview real com URL resolvida e higienizada (S5.2)
-        const videoUrlSafe = escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier)));
+        const isClipExpired = clip.videoExists === false || clip.expired === true;
+        const videoUrlSafe = !isClipExpired ? escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier))) : '';
         const thumbnailUrlSafe = escapeHtml(resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier)));
-        videoContainer.innerHTML = `
-            <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                <video id="editor-video-player" src="${videoUrlSafe}" poster="${thumbnailUrlSafe}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
-            </div>
-        `;
-        updatePlayerAspect(currentRatio);
 
-        // Sempre renova para URL assinada recente para garantir reprodução fluida no editor
-        fetchSignedUrl(clipIdentifier).then(data => {
+        if (isClipExpired) {
+            videoContainer.innerHTML = `
+                <div id="editor-video-wrapper" style="width: 100%; min-height: 320px; border-radius: var(--radius-md); overflow: hidden; background: #0b0f19; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); padding: 2rem; text-align: center;">
+                    <i class="fa-solid fa-clock-rotate-left" style="font-size: 2.5rem; color: #94a3b8; margin-bottom: 0.75rem;"></i>
+                    <h4 style="color: #f1f5f9; font-weight: 600; margin-bottom: 0.25rem;">Vídeo expirado no servidor</h4>
+                    <p style="color: #64748b; font-size: 0.85rem; max-width: 280px;">Os arquivos temporários deste corte foram removidos conforme a política de retenção de 24h.</p>
+                </div>
+            `;
+        } else {
+            videoContainer.innerHTML = `
+                <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
+                    <video id="editor-video-player" src="${videoUrlSafe}" poster="${thumbnailUrlSafe}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
+                </div>
+            `;
+            updatePlayerAspect(currentRatio);
+
             const player = document.getElementById('editor-video-player');
-            if (player && data && data.download_url) {
-                const freshUrl = resolveMediaUrl(data.download_url);
-                clip.videoUrl = freshUrl;
-                player.src = freshUrl;
-                player.play().catch(() => {});
+            if (player) {
+                player.addEventListener('error', () => {
+                    player.removeAttribute('src');
+                    player.load();
+                }, { once: true });
             }
-        }).catch(() => {});
+
+            // Sempre renova para URL assinada recente para garantir reprodução fluida no editor
+            fetchSignedUrl(clipIdentifier).then(data => {
+                const p = document.getElementById('editor-video-player');
+                if (p && data && data.download_url) {
+                    const freshUrl = resolveMediaUrl(data.download_url);
+                    clip.videoUrl = freshUrl;
+                    p.src = freshUrl;
+                    p.play().catch(() => { });
+                }
+            }).catch(() => { });
+        }
 
         transcriptContainer.innerHTML = '';
 
@@ -400,23 +522,23 @@ const UI = {
         if (btnExport) {
             const newBtn = btnExport.cloneNode(true);
             btnExport.parentNode.replaceChild(newBtn, btnExport);
-            
+
             newBtn.addEventListener('click', async () => {
                 const originalText = newBtn.innerHTML;
                 newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Solicitando re-render...';
                 newBtn.disabled = true;
-                
+
                 const style = document.getElementById('caption-style-select').value || 'Yellow';
                 const trimStart = parseFloat(document.getElementById('trim-start').value || 0);
                 const trimEnd = parseFloat(document.getElementById('trim-end').value || 0);
                 const aspectRatio = document.getElementById('aspect-ratio-select').value || '9:16';
                 const addSubtitles = document.getElementById('toggle-subtitles').checked;
                 const quality = document.getElementById('quality-select').value || '1080p';
-                
+
                 try {
                     const res = await fetch(`${API_BASE}/projects/clip/${clipIdentifier}/re-render`, {
                         method: 'POST',
-                        headers: { 
+                        headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${localStorage.getItem('clipmaker_token')}`
                         },
@@ -430,16 +552,16 @@ const UI = {
                             quality: quality
                         })
                     });
-                    
+
                     if (!res.ok) {
                         let errDetail = 'Erro na solicitação de renderização';
                         try {
                             const errData = await res.json();
                             if (errData.detail) errDetail = errData.detail;
-                        } catch (e) {}
+                        } catch (e) { }
                         throw new Error(errDetail);
                     }
-                    
+
                     newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando vídeo...';
 
                     // Polling do status do clipe até COMPLETED
@@ -463,12 +585,12 @@ const UI = {
                     if (!pollSuccess) {
                         throw new Error('Tempo limite de renderização atingido. Tente novamente mais tarde.');
                     }
-                    
+
                     let refreshedUrl = resolveMediaUrl(getClipVideoUrl(clipIdentifier, `t=${Date.now()}`));
                     try {
                         const signedData = await fetchSignedUrl(clipIdentifier);
                         refreshedUrl = resolveMediaUrl(signedData.download_url);
-                    } catch (e) {}
+                    } catch (e) { }
 
                     // Baixar automaticamente apenas após conclusão confirmada sem navegar para fora da página
                     const safeExportTitle = (clip.title || 'clipe_exportado')
@@ -477,14 +599,14 @@ const UI = {
                         .replace(/\s+/g, '_');
                     triggerFileDownload(refreshedUrl, `${safeExportTitle}.mp4`);
                     showToast('Exportação concluída! Download iniciado.', 'success');
-                    
+
                     // Recarregar preview
                     const currentVideoEl = document.getElementById('editor-video-player');
                     if (currentVideoEl) {
                         currentVideoEl.src = refreshedUrl;
-                        currentVideoEl.play().catch(() => {});
+                        currentVideoEl.play().catch(() => { });
                     }
-                    
+
                     clip.captionConfig = style;
                     clip.aspectRatio = aspectRatio;
                     clip.startTime = trimStart;
@@ -496,9 +618,14 @@ const UI = {
                     if (cardPreview) {
                         const newCardRatio = aspectRatio === '16:9' ? '16/9' : (aspectRatio === '1:1' ? '1/1' : '9/16');
                         cardPreview.style.aspectRatio = newCardRatio;
+                        const oldOverlay = cardPreview.querySelector('.clip-expired-overlay');
+                        if (oldOverlay) oldOverlay.remove();
+                        clip.videoExists = true;
+                        clip.status = 'COMPLETED';
                         const cardVideo = cardPreview.querySelector('video');
                         if (cardVideo) {
                             cardVideo.src = refreshedUrl;
+                            cardVideo.dataset.src = refreshedUrl;
                         }
                     }
                 } catch (err) {
@@ -523,7 +650,7 @@ const UI = {
         if (modal && !modal.classList.contains('hidden')) {
             modal.classList.add('hidden');
         }
-        
+
         const videoEl = document.getElementById('editor-video-player');
         if (videoEl) videoEl.pause();
 

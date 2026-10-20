@@ -1,9 +1,12 @@
+import os
 import uuid
+from pathlib import Path
 from typing import List, Optional, Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
 
 from backend.app.api.deps import get_current_user, limiter
+from backend.app.core.config import settings
 from backend.app.core.security import create_signed_url_token
 from backend.app.db.db_service import (
     get_project_with_clips,
@@ -16,6 +19,7 @@ from backend.app.db.db_service import (
 )
 from backend.app.worker.worker import re_render_clip_task
 
+TEMP_DIR = Path(settings.TEMP_DIR)
 router = APIRouter(tags=["project"])
 
 
@@ -101,6 +105,19 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
         thumb_key = c.get("thumbnail_key") or c.get("thumbnailkey") or ""
         thumb_url = f"/api/videos/thumbnail/{clip_id_str}?sig={sig}" if thumb_key else ""
         video_url = f"/api/videos/download/{clip_id_str}?sig={sig}"
+
+        rendered_name = os.path.basename(c.get("renderedurl") or f"clip_{clip_id_str}.mp4")
+        video_file_path = (TEMP_DIR / rendered_name).resolve()
+        
+        # Um clipe é considerado EXPIRED se o status no banco for EXPIRED ou se o projeto está pronto/expirado e o arquivo físico não existe mais
+        is_expired = c.get("status") == "EXPIRED"
+        if not is_expired and project.get("status") in ("READY", "EXPIRED"):
+            if not video_file_path.is_file():
+                is_expired = True
+
+        clip_status = "EXPIRED" if is_expired else c.get("status", "COMPLETED")
+        video_exists = video_file_path.is_file() and not is_expired
+
         clips_list.append({
             "id": c.get("renderedurl"),
             "clipId": clip_id_str,
@@ -116,15 +133,20 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
             "thumbnailUrl": thumb_url,
             "videoUrl": video_url,
             "thumbnailKey": thumb_key,
-            "status": c.get("status", "COMPLETED"),
+            "status": clip_status,
             "words": c.get("words", []),
-            "captionConfig": c.get("captionconfig", "Yellow")
+            "captionConfig": c.get("captionconfig", "Yellow"),
+            "videoExists": video_exists
         })
 
     queue_info = await get_project_queue_info(project_id)
+    proj_status = project.get("status")
+    if proj_status in ("READY", "COMPLETED") and clips_list:
+        if all(cl.get("status") == "EXPIRED" for cl in clips_list):
+            proj_status = "EXPIRED"
 
     return {
-        "status": project.get("status"),
+        "status": proj_status,
         "error": project.get("errormessage"),
         "title": project.get("title"),
         "aiCutsFallback": bool(project.get("ai_cuts_fallback") or project.get("aicutsfallback") or False),
