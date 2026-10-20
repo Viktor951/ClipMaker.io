@@ -69,7 +69,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 
 CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", \
      "--workers", "1", "--limit-concurrency", "50", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1,172.16.0.0/12,10.0.0.0/8"]
 
 
 # ── ESTÁGIO 3: RUNTIME GPU (Worker com suporte a NVIDIA CUDA) ────────────────

@@ -20,7 +20,7 @@ x-app-env: &app-env
   REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
   SECRET_KEY: ${SECRET_KEY:?defina SECRET_KEY no .env}
   GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-  ALLOWED_ORIGINS: http://${DOMAIN:-localhost},https://${DOMAIN:-localhost},http://localhost,http://127.0.0.1,null
+  ALLOWED_ORIGINS: http://${DOMAIN:-localhost},https://${DOMAIN:-localhost}
   LOG_FORMAT: json
   MAX_SOURCE_HEIGHT: ${MAX_SOURCE_HEIGHT:-1080}
   USE_NGINX_ACCEL: "true"
@@ -97,6 +97,9 @@ services:
       --maxmemory-policy noeviction
       --appendonly yes
       --appendfsync everysec
+      --rename-command CONFIG ""
+      --rename-command FLUSHALL ""
+      --rename-command FLUSHDB ""
     volumes:
       - ${DATA_ROOT:-D:/docker-data/clipmaker}/redis:/data
     restart: unless-stopped

@@ -166,8 +166,8 @@ const UI = {
             const titleSafe = escapeHtml(clip.title || 'Corte Viral (IA)');
             const hookSafe = escapeHtml(clip.hookReason || '');
             
-            const videoUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
-            const thumbnailUrl = resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier));
+            const videoUrl = escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier)));
+            const thumbnailUrl = escapeHtml(resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier)));
             // Card com vídeo HTML5 e overlay de play
             const mediaContent = `
                 <video src="${videoUrl}" poster="${thumbnailUrl}" preload="metadata" playsinline controls class="clip-card-video"></video>
@@ -312,12 +312,12 @@ const UI = {
             };
         }
 
-        // Reconstruir o video preview real com URL resolvida
-        const videoUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
-        const thumbnailUrl = resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier));
+        // Reconstruir o video preview real com URL resolvida e higienizada (S5.2)
+        const videoUrlSafe = escapeHtml(resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier)));
+        const thumbnailUrlSafe = escapeHtml(resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier)));
         videoContainer.innerHTML = `
             <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                <video id="editor-video-player" src="${videoUrl}" poster="${thumbnailUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
+                <video id="editor-video-player" src="${videoUrlSafe}" poster="${thumbnailUrlSafe}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
             </div>
         `;
         updatePlayerAspect(currentRatio);
