@@ -32,9 +32,23 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
         encoded_jwt = encoded_jwt.decode("utf-8")
     return encoded_jwt
 
+DUMMY_PASSWORD_HASH = "$2b$12$uO3WYGhnZTVnGO61TfV93eaFiVabrVdgeI0QcAjNd6ZoxPQzyN/9y"
+
+def dummy_verify_password(password: str) -> bool:
+    """Executa verificação bcrypt dummy para garantir tempo de resposta constante e mitigar timing attacks."""
+    try:
+        return pwd_context.verify(password, DUMMY_PASSWORD_HASH)
+    except Exception:
+        return False
+
 def decode_access_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"require": ["exp"]}
+        )
         return payload
     except PyJWTError:
         return None

@@ -50,3 +50,17 @@ async def test_register_and_login():
         })
         assert bad_response.status_code == 400
 
+        # 5. Delete account (LGPD - Direito ao Esquecimento)
+        auth_headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
+        del_response = await ac.delete("/api/v1/auth/me", headers=auth_headers)
+        assert del_response.status_code == 200
+        assert del_response.json()["status"] == "success"
+
+        # 6. Re-registering with the same email succeeds because previous account was deleted
+        re_reg_response = await ac.post("/api/v1/auth/register", json={
+            "email": unique_email,
+            "password": password,
+            "name": "Recreated User"
+        })
+        assert re_reg_response.status_code == 200
+

@@ -1,5 +1,12 @@
 from datetime import timedelta
-from backend.app.core.security import get_password_hash, verify_password, create_access_token, decode_access_token
+from backend.app.core.security import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    decode_access_token,
+    SECRET_KEY,
+    ALGORITHM
+)
 from backend.app.services.video_service import _compute_crop_and_scale, format_timestamp
 from backend.app.api.routers.video import _is_safe_public_url
 
@@ -24,6 +31,17 @@ def test_jwt_token_lifecycle():
 
     # Token inválido
     assert decode_access_token("token.malformado.aqui") is None
+
+    # Token sem claim 'exp' deve ser rejeitado obrigatoriamente (S1.1)
+    import jwt
+    token_sem_exp = jwt.encode({"sub": email}, SECRET_KEY, algorithm=ALGORITHM)
+    assert decode_access_token(token_sem_exp) is None
+
+
+def test_dummy_password_verification():
+    from backend.app.core.security import dummy_verify_password
+    # Deve executar verificação em tempo constante sem lançar exceções e retornar False
+    assert dummy_verify_password("qualquer_senha") is False
 
 
 def test_anti_ssrf_url_validation(monkeypatch):

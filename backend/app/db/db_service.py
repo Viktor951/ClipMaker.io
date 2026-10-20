@@ -852,3 +852,102 @@ async def fail_stale_projects(stale_minutes: int = 60) -> int:
     return len(stale_ids)
 
 
+async def delete_user_account(user_id: str) -> bool:
+    """Exclui completamente o usuário e todos os seus dados vinculados (LGPD - Direito ao Esquecimento)."""
+    if not _is_valid_uuid(user_id):
+        return False
+    db = await get_backend()
+    user = await db.fetchrow("SELECT id FROM users WHERE id = $1", user_id)
+    if not user:
+        return False
+
+    projects = await db.fetch("SELECT id FROM projects WHERE userId = $1", user_id)
+    project_ids = [str(p["id"]) for p in projects]
+
+    async with db.transaction() as tx:
+        await tx.execute("DELETE FROM transcriptions WHERE userId = $1", user_id)
+        for pid in project_ids:
+            await tx.execute("DELETE FROM clips WHERE projectId = $1", pid)
+            await tx.execute("DELETE FROM transcriptions WHERE projectId = $1", pid)
+        await tx.execute("DELETE FROM projects WHERE userId = $1", user_id)
+        await tx.execute("DELETE FROM users WHERE id = $1", user_id)
+
+    logger.info(f"[LGPD] Conta de usuário {user_id} e todos os dados associados foram excluídos com sucesso.")
+    return True
+
+
+async def cleanup_old_db_records(max_age_days: int = 30) -> Dict[str, int]:
+    """
+    Rotina de retenção de dados (LGPD): remove projetos e transcrições com mais de max_age_days dias.
+    """
+    db = await get_backend()
+    from datetime import datetime, timezone, timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+
+    rows = await db.fetch("SELECT id, createdAt FROM projects")
+    old_project_ids = []
+    for r in rows:
+        raw_dt = r.get("createdat") or r.get("createdAt")
+        if not raw_dt:
+            continue
+        if isinstance(raw_dt, str):
+            clean_str = raw_dt.replace("T", " ").split("+")[0].split("Z")[0].strip()
+            try:
+                if "." in clean_str:
+                    p_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S.%f")
+                else:
+                    p_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+                p_dt = p_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+        elif isinstance(raw_dt, datetime):
+            p_dt = raw_dt if raw_dt.tzinfo else raw_dt.replace(tzinfo=timezone.utc)
+        else:
+            continue
+
+        if p_dt < cutoff:
+            old_project_ids.append(str(r["id"]))
+
+    deleted_projects = 0
+    deleted_transcriptions = 0
+
+    for pid in old_project_ids:
+        try:
+            await db.execute("DELETE FROM clips WHERE projectId = $1", pid)
+            await db.execute("DELETE FROM transcriptions WHERE projectId = $1", pid)
+            await db.execute("DELETE FROM projects WHERE id = $1", pid)
+            deleted_projects += 1
+        except Exception as e:
+            logger.warning(f"Erro ao remover projeto antigo {pid}: {e}")
+
+    t_rows = await db.fetch("SELECT id, createdAt FROM transcriptions")
+    for tr in t_rows:
+        raw_dt = tr.get("createdat") or tr.get("createdAt")
+        if not raw_dt:
+            continue
+        if isinstance(raw_dt, str):
+            clean_str = raw_dt.replace("T", " ").split("+")[0].split("Z")[0].strip()
+            try:
+                if "." in clean_str:
+                    t_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S.%f")
+                else:
+                    t_dt = datetime.strptime(clean_str, "%Y-%m-%d %H:%M:%S")
+                t_dt = t_dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                continue
+        elif isinstance(raw_dt, datetime):
+            t_dt = raw_dt if raw_dt.tzinfo else raw_dt.replace(tzinfo=timezone.utc)
+        else:
+            continue
+
+        if t_dt < cutoff:
+            try:
+                await db.execute("DELETE FROM transcriptions WHERE id = $1", str(tr["id"]))
+                deleted_transcriptions += 1
+            except Exception:
+                pass
+
+    logger.info(f"[RETENÇÃO LGPD] Removidos {deleted_projects} projetos e {deleted_transcriptions} transcrições com mais de {max_age_days} dias.")
+    return {"deleted_projects": deleted_projects, "deleted_transcriptions": deleted_transcriptions}
+
+

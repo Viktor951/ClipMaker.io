@@ -8,3 +8,4 @@ class UserCreate(BaseModel):
     # bcrypt só considera os primeiros 72 bytes: limitar evita truncamento silencioso
     password: str = Field(..., min_length=8, max_length=72)
     name: Optional[str] = Field(default=None, max_length=100)
+    turnstile_token: Optional[str] = Field(default=None, description="Token anti-bot Cloudflare Turnstile / reCAPTCHA")

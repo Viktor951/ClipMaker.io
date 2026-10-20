@@ -35,6 +35,19 @@ def check_stale_projects_watchdog():
         print(f"[CLEANUP/WATCHDOG] Verificação ignorada ou indisponível: {e}")
 
 
+def cleanup_database_retention():
+    """Rotina de retenção LGPD: apaga projetos e transcrições com mais de 30 dias."""
+    try:
+        from backend.app.core.loop import run_sync
+        from backend.app.db.db_service import cleanup_old_db_records
+        max_days = int(os.getenv("RETENTION_MAX_DAYS", "30"))
+        res = run_sync(cleanup_old_db_records(max_age_days=max_days))
+        print(f"[CLEANUP/LGPD] Retenção concluída: {res.get('deleted_projects', 0)} projetos e {res.get('deleted_transcriptions', 0)} transcrições removidos.")
+    except Exception as e:
+        print(f"[CLEANUP/LGPD] Limpeza de banco ignorada ou indisponível: {e}")
+
+
 if __name__ == "__main__":
     cleanup_old_files()
     check_stale_projects_watchdog()
+    cleanup_database_retention()
