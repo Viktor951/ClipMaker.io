@@ -32,13 +32,40 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/001_init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-clipmaker_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
     deploy:
       resources:
         limits:
           memory: 256M
           cpus: "0.5"
+
+  # ── MIGRAÇÕES (one-shot a cada up) ───────────────────────────────────────
+  migrate:
+    image: postgres:15-alpine
+    entrypoint: ["sh", "/scripts/migrate.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-clipmaker_db}
+      POSTGRES_HOST: db
+    volumes:
+      - ./migrations:/migrations:ro
+      - ./scripts/migrate.sh:/scripts/migrate.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: "0.2"
 
   # ── CACHE / FILA ─────────────────────────────────────────────────────────
   redis:
@@ -83,8 +110,12 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     restart: unless-stopped
     deploy:
       resources:
@@ -133,9 +164,14 @@ services:
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     depends_on:
-      - db
-      - redis
-      - api
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+      api:
+        condition: service_started
     restart: unless-stopped
     deploy:
       resources:

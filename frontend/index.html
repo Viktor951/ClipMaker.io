@@ -35,7 +35,7 @@
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
     <link rel="stylesheet" href="css/layout.css?v=2e9a82ce">
-    <link rel="stylesheet" href="css/components.css?v=5d0c6fc6">
+    <link rel="stylesheet" href="css/components.css?v=88ab0814">
     <link rel="stylesheet" href="css/responsive.css?v=60872474">
 </head>
 <body>
@@ -110,6 +110,12 @@
             <div class="nav-links">
                 <a href="#como-funciona">Como funciona</a>
                 <a href="#recursos">Recursos</a>
+                <span id="nav-credits-badge" class="nav-credits-badge" style="display: none;" title="Saldo de créditos disponíveis para geração de cortes">
+                    <i class="fa-solid fa-coins" aria-hidden="true"></i> <span id="user-credits-val">60</span> créditos
+                </span>
+                <button type="button" class="btn-projects-nav" id="btn-projects-nav" style="display: none;" title="Visualizar histórico de projetos">
+                    <i class="fa-solid fa-folder-open" aria-hidden="true"></i> Meus Projetos
+                </button>
                 <a href="#" class="btn-primary-outline" id="btn-login-nav">Login</a>
                 <a href="#" class="btn-primary btn-sm" id="btn-register-nav">Começar grátis</a>
             </div>
@@ -620,6 +626,37 @@
             </div>
         </div>
 
+        <!-- ═══════════ MODAL: MEUS PROJETOS ═══════════ -->
+        <div class="modal hidden" id="projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-modal-title">
+            <div class="modal-content projects-modal-content">
+                <div class="modal-header">
+                    <h3 id="projects-modal-title" style="display: flex; align-items: center; gap: 0.6rem; margin: 0; font-size: 1.25rem;">
+                        <i class="fa-solid fa-folder-open" style="color: var(--accent-ai);" aria-hidden="true"></i>
+                        <span>Meus Projetos</span>
+                    </h3>
+                    <button type="button" class="btn-close" id="btn-close-projects-modal" aria-label="Fechar lista de projetos">
+                        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                    </button>
+                </div>
+                <div class="modal-body projects-modal-body">
+                    <div class="projects-modal-toolbar">
+                        <div class="projects-search-box">
+                            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                            <input type="text" id="projects-filter-input" placeholder="Buscar projeto por título..." class="projects-search-input" aria-label="Filtrar projetos">
+                        </div>
+                        <button type="button" class="btn-secondary btn-sm" id="btn-refresh-projects" title="Atualizar lista de projetos">
+                            <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Atualizar
+                        </button>
+                    </div>
+                    <div id="projects-list-container" class="projects-list-container">
+                        <div class="projects-loading-state">
+                            <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Carregando seus projetos...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- ═══════════ TOAST CONTAINER ═══════════ -->
         <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
@@ -729,7 +766,7 @@
 
     <!-- Scripts com defer e versionamento -->
     <script src="js/ui.js?v=d1989814" defer></script>
-    <script src="js/app.js?v=9744ef5a" defer></script>
+    <script src="js/app.js?v=4e763766" defer></script>
 
 </body>
 </html>

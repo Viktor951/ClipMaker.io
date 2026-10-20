@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const API_BASE = `${API_BASE_URL}/api`;
     let authToken = localStorage.getItem('clipmaker_token') || null;
 
-    // --- Auth UI Logic ---
+    // --- Auth & Projects UI Logic ---
     const authModal = document.getElementById('auth-modal');
     const btnLoginNav = document.getElementById('btn-login-nav');
     const btnRegisterNav = document.getElementById('btn-register-nav');
@@ -26,15 +26,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const authEmail = document.getElementById('auth-email');
     const authPassword = document.getElementById('auth-password');
     const btnSubmitAuth = document.getElementById('btn-submit-auth');
+    const navCreditsBadge = document.getElementById('nav-credits-badge');
+    const userCreditsVal = document.getElementById('user-credits-val');
+    const btnProjectsNav = document.getElementById('btn-projects-nav');
+    const projectsModal = document.getElementById('projects-modal');
+    const btnCloseProjectsModal = document.getElementById('btn-close-projects-modal');
+    const btnRefreshProjects = document.getElementById('btn-refresh-projects');
+    const projectsFilterInput = document.getElementById('projects-filter-input');
+    const projectsListContainer = document.getElementById('projects-list-container');
     let isLoginMode = true;
+
+    async function fetchUserProfile() {
+        if (!authToken) return;
+        try {
+            const res = await fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (res.status === 401) {
+                authToken = null;
+                localStorage.removeItem('clipmaker_token');
+                updateNav();
+                return;
+            }
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data && data.user) {
+                if (userCreditsVal && typeof data.user.credits !== 'undefined') {
+                    userCreditsVal.innerText = data.user.credits;
+                }
+                if (navCreditsBadge) {
+                    navCreditsBadge.style.display = 'inline-flex';
+                }
+            }
+        } catch (e) {
+            console.warn("Não foi possível carregar dados do usuário:", e);
+        }
+    }
 
     function updateNav() {
         if (authToken) {
             if (btnLoginNav) btnLoginNav.innerText = "Sair";
             if (btnRegisterNav) btnRegisterNav.style.display = "none";
+            if (navCreditsBadge) navCreditsBadge.style.display = "inline-flex";
+            if (btnProjectsNav) btnProjectsNav.style.display = "inline-flex";
+            fetchUserProfile();
         } else {
             if (btnLoginNav) btnLoginNav.innerText = "Login";
             if (btnRegisterNav) btnRegisterNav.style.display = "inline-flex";
+            if (navCreditsBadge) navCreditsBadge.style.display = "none";
+            if (btnProjectsNav) btnProjectsNav.style.display = "none";
         }
     }
     updateNav();
@@ -93,6 +133,175 @@ document.addEventListener('DOMContentLoaded', () => {
             btnSubmitAuth.innerText = "Criar Conta";
             authToggleMode.innerText = "Já tem uma conta? Entrar";
         }
+    }
+
+    // --- Projects Modal Logic ---
+    let cachedUserProjects = [];
+
+    async function loadUserProjects() {
+        if (!authToken) {
+            showToast("Faça login para ver seus projetos.", "info");
+            return;
+        }
+        if (!projectsListContainer) return;
+        projectsListContainer.innerHTML = `
+            <div class="projects-loading-state">
+                <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Carregando seus projetos...
+            </div>
+        `;
+
+        try {
+            const res = await fetch(`${API_BASE}/projects`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            if (!res.ok) throw new Error("Falha ao carregar lista de projetos.");
+            const data = await res.json();
+            cachedUserProjects = data.projects || [];
+            renderProjectsList(cachedUserProjects);
+            fetchUserProfile();
+        } catch (err) {
+            projectsListContainer.innerHTML = `
+                <div class="projects-empty-state">
+                    <i class="fa-solid fa-circle-exclamation" style="color: #EF4444;" aria-hidden="true"></i>
+                    <p>${escapeHtml(err.message)}</p>
+                    <button type="button" class="btn-secondary btn-sm" id="btn-retry-load-projects">Tentar novamente</button>
+                </div>
+            `;
+            const retryBtn = document.getElementById('btn-retry-load-projects');
+            if (retryBtn) retryBtn.addEventListener('click', loadUserProjects);
+        }
+    }
+
+    function renderProjectsList(projects) {
+        if (!projectsListContainer) return;
+        if (!projects || projects.length === 0) {
+            projectsListContainer.innerHTML = `
+                <div class="projects-empty-state">
+                    <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
+                    <p>Nenhum projeto encontrado.</p>
+                    <span style="font-size: 0.825rem; color: var(--text-300);">Envie um vídeo ou cole uma URL para gerar seus primeiros cortes!</span>
+                </div>
+            `;
+            return;
+        }
+
+        projectsListContainer.innerHTML = '';
+        projects.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'project-item-card';
+            card.id = `project-card-${p.id}`;
+
+            const statusClass = `status-${(p.status || 'pending').toLowerCase()}`;
+            const statusLabel = p.status || 'PENDING';
+            const dur = p.durationsec ? `${Math.round(p.durationsec)}s` : '--';
+            const dateStr = p.createdat ? new Date(p.createdat).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+            card.innerHTML = `
+                <div class="project-item-info">
+                    <div class="project-item-title" title="${escapeHtml(p.title || 'Projeto sem título')}">
+                        ${escapeHtml(p.title || 'Projeto sem título')}
+                    </div>
+                    <div class="project-item-meta">
+                        <span class="project-status-pill ${statusClass}">
+                            <i class="fa-solid ${statusLabel === 'COMPLETED' ? 'fa-check' : (statusLabel === 'FAILED' ? 'fa-xmark' : 'fa-spinner fa-spin')}" aria-hidden="true"></i>
+                            ${statusLabel}
+                        </span>
+                        <span><i class="fa-regular fa-clock" aria-hidden="true"></i> ${dur}</span>
+                        ${dateStr ? `<span><i class="fa-regular fa-calendar" aria-hidden="true"></i> ${dateStr}</span>` : ''}
+                    </div>
+                </div>
+                <div class="project-item-actions">
+                    <button type="button" class="btn-project-open" data-id="${escapeHtml(p.id)}" data-title="${escapeHtml(p.title || 'Vídeo')}" title="Abrir projeto e visualizar cortes">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Abrir
+                    </button>
+                    <button type="button" class="btn-project-delete" data-id="${escapeHtml(p.id)}" title="Excluir projeto permanentemente" aria-label="Excluir projeto">
+                        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                    </button>
+                </div>
+            `;
+
+            // Clique em Abrir
+            const openBtn = card.querySelector('.btn-project-open');
+            if (openBtn) {
+                openBtn.addEventListener('click', () => {
+                    if (projectsModal) projectsModal.classList.add('hidden');
+                    localStorage.setItem('clipmaker_active_project', p.id);
+                    localStorage.setItem('clipmaker_active_source_name', p.title || 'Vídeo');
+                    if (typeof loadProject === 'function') {
+                        loadProject(p.id, p.title || 'Vídeo');
+                    }
+                });
+            }
+
+            // Clique em Excluir
+            const delBtn = card.querySelector('.btn-project-delete');
+            if (delBtn) {
+                delBtn.addEventListener('click', async () => {
+                    const confirmDel = confirm(`Deseja realmente excluir o projeto "${p.title || 'este projeto'}"? Todos os cortes gerados serão removidos.`);
+                    if (!confirmDel) return;
+
+                    delBtn.disabled = true;
+                    delBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                    try {
+                        const delRes = await fetch(`${API_BASE}/projects/${p.id}`, {
+                            method: 'DELETE',
+                            headers: { 'Authorization': `Bearer ${authToken}` }
+                        });
+                        if (!delRes.ok) throw new Error("Falha ao excluir projeto.");
+                        showToast("Projeto excluído com sucesso.", "success");
+                        card.remove();
+                        cachedUserProjects = cachedUserProjects.filter(item => item.id !== p.id);
+                        if (cachedUserProjects.length === 0) {
+                            renderProjectsList([]);
+                        }
+                    } catch (e) {
+                        showToast(e.message || "Erro ao excluir projeto.", "error");
+                        delBtn.disabled = false;
+                        delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+                    }
+                });
+            }
+
+            projectsListContainer.appendChild(card);
+        });
+    }
+
+    if (projectsFilterInput) {
+        projectsFilterInput.addEventListener('input', (e) => {
+            const query = (e.target.value || '').trim().toLowerCase();
+            if (!query) {
+                renderProjectsList(cachedUserProjects);
+                return;
+            }
+            const filtered = cachedUserProjects.filter(p => 
+                (p.title && p.title.toLowerCase().includes(query)) ||
+                (p.id && p.id.toLowerCase().includes(query)) ||
+                (p.status && p.status.toLowerCase().includes(query))
+            );
+            renderProjectsList(filtered);
+        });
+    }
+
+    if (btnProjectsNav) {
+        btnProjectsNav.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (projectsModal) {
+                projectsModal.classList.remove('hidden');
+                loadUserProjects();
+            }
+        });
+    }
+
+    if (btnCloseProjectsModal) {
+        btnCloseProjectsModal.addEventListener('click', () => {
+            if (projectsModal) projectsModal.classList.add('hidden');
+        });
+    }
+
+    if (btnRefreshProjects) {
+        btnRefreshProjects.addEventListener('click', () => {
+            loadUserProjects();
+        });
     }
 
     function parseApiError(errorData, defaultMessage) {

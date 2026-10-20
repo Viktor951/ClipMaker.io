@@ -352,6 +352,55 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     return await db.fetchrow("SELECT * FROM users WHERE email = $1", email)
 
 
+async def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    """Consulta segura de dados do usuário por ID sem expor o hash da senha."""
+    if not _is_valid_uuid(user_id):
+        return None
+    db = await get_backend()
+    row = await db.fetchrow(
+        "SELECT id, email, name, credits, createdAt, updatedAt FROM users WHERE id = $1",
+        user_id
+    )
+    if not row:
+        return None
+    udict = dict(row)
+    udict["id"] = str(udict.get("id"))
+    udict["email"] = udict.get("email") or ""
+    udict["name"] = udict.get("name") or ""
+    udict["credits"] = int(udict.get("credits", 60) if udict.get("credits") is not None else 60)
+    return udict
+
+
+async def deduct_user_credits(user_id: str, amount: int = 1) -> bool:
+    """Deduz créditos de forma segura e atômica. Retorna True se o débito for bem-sucedido."""
+    if not _is_valid_uuid(user_id) or amount <= 0:
+        return False
+    db = await get_backend()
+    user = await db.fetchrow("SELECT credits FROM users WHERE id = $1", user_id)
+    if not user:
+        return False
+    current_credits = int(user.get("credits", 0) if user.get("credits") is not None else 0)
+    if current_credits < amount:
+        return False
+    await db.execute(
+        "UPDATE users SET credits = credits - $1, updatedAt = CURRENT_TIMESTAMP WHERE id = $2 AND credits >= $3",
+        amount, user_id, amount
+    )
+    return True
+
+
+async def add_user_credits(user_id: str, amount: int = 10) -> bool:
+    """Adiciona créditos à conta do usuário (recarga/reembolso)."""
+    if not _is_valid_uuid(user_id) or amount <= 0:
+        return False
+    db = await get_backend()
+    await db.execute(
+        "UPDATE users SET credits = credits + $1, updatedAt = CURRENT_TIMESTAMP WHERE id = $2",
+        amount, user_id
+    )
+    return True
+
+
 async def create_project(
     user_id: str,
     title: str,
@@ -397,6 +446,18 @@ async def get_user_projects(user_id: str) -> List[Dict[str, Any]]:
         user_id
     )
     return rows
+
+
+async def delete_project(project_id: str, user_id: str) -> bool:
+    """Exclui com segurança um projeto pertencente ao usuário especificado (efeito cascata em clips e transcrições)."""
+    if not _is_valid_uuid(project_id) or not _is_valid_uuid(user_id):
+        return False
+    db = await get_backend()
+    proj = await db.fetchrow("SELECT id FROM projects WHERE id = $1 AND userId = $2", project_id, user_id)
+    if not proj:
+        return False
+    await db.execute("DELETE FROM projects WHERE id = $1 AND userId = $2", project_id, user_id)
+    return True
 
 
 async def update_project_status(project_id: str, status: str, error_message: str = None):

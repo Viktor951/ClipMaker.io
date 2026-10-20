@@ -15,7 +15,14 @@ from fastapi.responses import FileResponse, Response
 from backend.app.api.deps import limiter, get_current_user, get_current_user_optional
 from backend.app.core.config import settings
 from backend.app.core.security import create_signed_url_token, verify_signed_url_token, decode_access_token
-from backend.app.db.db_service import create_project, get_clip_with_owner, count_active_projects_by_user, get_user_by_email
+from backend.app.db.db_service import (
+    create_project,
+    get_clip_with_owner,
+    count_active_projects_by_user,
+    get_user_by_email,
+    get_user_by_id,
+    deduct_user_credits
+)
 from backend.app.services.video_service import get_video_info
 from backend.app.worker.worker import process_video_task, download_and_process_url_task
 
@@ -115,11 +122,21 @@ async def process_video(
         raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
 
     # Limite de concorrência por usuário
-    active_jobs = await count_active_projects_by_user(str(current_user["id"]))
+    user_id = str(current_user["id"])
+    active_jobs = await count_active_projects_by_user(user_id)
     if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
         raise HTTPException(
             status_code=429,
             detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+        )
+
+    # Verificação de saldo de créditos
+    user_data = await get_user_by_id(user_id) or current_user
+    user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
+    if user_credits < 1:
+        raise HTTPException(
+            status_code=402,
+            detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
         )
 
     content_length = request.headers.get("content-length")
@@ -164,11 +181,12 @@ async def process_video(
         raise HTTPException(status_code=400, detail="Arquivo de vídeo inválido ou corrompido.")
 
     project_id = await create_project(
-        user_id=str(current_user["id"]),
+        user_id=user_id,
         title=file.filename or "Upload de Vídeo",
         source_file_key=safe_filename,
         duration_sec=duration
     )
+    await deduct_user_credits(user_id, amount=1)
 
     process_video_task(project_id, str(input_path), str(TEMP_DIR), aspect_ratio)
     return {"status": "processing", "project_id": project_id}
@@ -188,11 +206,21 @@ async def process_url(
         raise HTTPException(status_code=400, detail="aspect_ratio inválido. Permitidos: '9:16', '1:1', '16:9'.")
 
     # Limite de concorrência por usuário
-    active_jobs = await count_active_projects_by_user(str(current_user["id"]))
+    user_id = str(current_user["id"])
+    active_jobs = await count_active_projects_by_user(user_id)
     if active_jobs >= settings.MAX_CONCURRENT_JOBS_PER_USER:
         raise HTTPException(
             status_code=429,
             detail=f"Limite de {settings.MAX_CONCURRENT_JOBS_PER_USER} processamentos simultâneos atingido. Aguarde a conclusão dos projetos em andamento."
+        )
+
+    # Verificação de saldo de créditos
+    user_data = await get_user_by_id(user_id) or current_user
+    user_credits = int(user_data.get("credits", 60) if user_data.get("credits") is not None else 60)
+    if user_credits < 1:
+        raise HTTPException(
+            status_code=402,
+            detail="Saldo de créditos insuficiente (0 créditos disponíveis). Você precisa de pelo menos 1 crédito para processar novos vídeos."
         )
 
     clean_url = url.strip()
@@ -203,13 +231,14 @@ async def process_url(
 
     # Cria o projeto imediatamente com status inicial DOWNLOADING
     project_id = await create_project(
-        user_id=str(current_user["id"]),
+        user_id=user_id,
         title="Importação por URL",
         source_file_key=safe_filename,
         duration_sec=0.0,
         source_url=clean_url,
         status="DOWNLOADING"
     )
+    await deduct_user_credits(user_id, amount=1)
 
     # Dispara a tarefa de download e probe assíncronos na fila do Huey, liberando a rota em < 15ms
     download_and_process_url_task(project_id, clean_url, str(TEMP_DIR), aspect_ratio)

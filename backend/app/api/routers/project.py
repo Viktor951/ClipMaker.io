@@ -10,6 +10,7 @@ from backend.app.db.db_service import (
     get_clip,
     create_project,
     get_user_projects,
+    delete_project,
     update_clip_status,
     get_project_queue_info
 )
@@ -69,6 +70,19 @@ async def create_new_project(payload: ProjectCreate = ProjectCreate(), current_u
     )
     return {"status": "success", "project_id": project_id, "status_name": "DRAFT"}
 
+
+@router.delete("/{project_id}")
+@router.delete("/{project_id}/")
+async def delete_user_project(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Exclui com segurança um projeto do usuário autenticado."""
+    user_id = str(current_user["id"])
+    success = await delete_project(project_id, user_id)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail="Projeto não encontrado ou você não possui permissão para excluí-lo."
+        )
+    return {"status": "success", "deleted_id": project_id, "message": "Projeto excluído com sucesso."}
 
 
 @router.get("/{project_id}/status")
