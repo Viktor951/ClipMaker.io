@@ -643,19 +643,28 @@ async def update_clip_words_and_style(clip_id: str, words_json: str, caption_con
 
 async def get_clip_with_owner(clip_id: str) -> Optional[Dict[str, Any]]:
     """Consulta otimizada com JOIN para download/stream sem carregar projeto inteiro nem parsear JSON."""
-    if not _is_valid_uuid(clip_id):
-        return None
     db = await get_backend()
-    row = await db.fetchrow(
-        """SELECT c.id, c.projectId, c.renderedUrl, c.thumbnail_key, c.status, p.userId
-           FROM clips c
-           JOIN projects p ON c.projectId = p.id
-           WHERE c.id = $1""",
-        clip_id
-    )
+    row = None
+    if _is_valid_uuid(clip_id):
+        row = await db.fetchrow(
+            """SELECT c.id, c.projectId, c.title, c.renderedUrl, c.thumbnail_key, c.status, p.userId
+               FROM clips c
+               JOIN projects p ON c.projectId = p.id
+               WHERE c.id = $1""",
+            clip_id
+        )
+    if not row:
+        row = await db.fetchrow(
+            """SELECT c.id, c.projectId, c.title, c.renderedUrl, c.thumbnail_key, c.status, p.userId
+               FROM clips c
+               JOIN projects p ON c.projectId = p.id
+               WHERE c.renderedUrl = $1""",
+            clip_id
+        )
     if not row:
         return None
     cdict = dict(row)
+    cdict['title'] = cdict.get('title') or 'Clipe'
     cdict['renderedUrl'] = cdict.get('renderedurl') or cdict.get('renderedUrl') or ''
     cdict['thumbnail_key'] = cdict.get('thumbnail_key') or cdict.get('thumbnailkey') or ''
     cdict['userId'] = cdict.get('userid') or cdict.get('userId') or ''

@@ -88,15 +88,44 @@ async function fetchSignedUrl(clipId) {
     return await res.json();
 }
 
+function resolveMediaUrl(url) {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+        return url;
+    }
+    const base = window.API_BASE_URL || '';
+    if (url.startsWith('/')) {
+        return `${base}${url}`;
+    }
+    return `${base}/${url}`;
+}
+
 function getClipVideoUrl(clipId, extraParam = '') {
     const parts = [];
     if (extraParam) parts.push(extraParam);
     const qs = parts.length ? `?${parts.join('&')}` : '';
-    return `/api/videos/download/${encodeURIComponent(clipId)}${qs}`;
+    const base = window.API_BASE_URL || '';
+    return `${base}/api/videos/download/${encodeURIComponent(clipId)}${qs}`;
 }
 
-function getClipThumbnailUrl(clipId) {
-    return `/api/videos/thumbnail/${encodeURIComponent(clipId)}`;
+function getClipThumbnailUrl(clipId, extraParam = '') {
+    const parts = [];
+    if (extraParam) parts.push(extraParam);
+    const qs = parts.length ? `?${parts.join('&')}` : '';
+    const base = window.API_BASE_URL || '';
+    return `${base}/api/videos/thumbnail/${encodeURIComponent(clipId)}${qs}`;
+}
+
+function triggerFileDownload(downloadUrl, filename = 'clip.mp4') {
+    const separator = downloadUrl.includes('?') ? '&' : '?';
+    const finalUrl = `${downloadUrl}${separator}download=1`;
+    const link = document.createElement('a');
+    link.href = finalUrl;
+    link.setAttribute('download', filename);
+    link.setAttribute('target', '_blank');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 const UI = {
@@ -137,10 +166,15 @@ const UI = {
             const titleSafe = escapeHtml(clip.title || 'Corte Viral (IA)');
             const hookSafe = escapeHtml(clip.hookReason || '');
             
-            const videoUrl = clip.videoUrl || getClipVideoUrl(clipIdentifier);
-            const thumbnailUrl = clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier);
-            // Item 4: poster com miniatura real e preload="none"
-            const mediaContent = `<video src="${videoUrl}" poster="${thumbnailUrl}" preload="none" controls class="clip-card-video"></video>`;
+            const videoUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
+            const thumbnailUrl = resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier));
+            // Card com vídeo HTML5 e overlay de play
+            const mediaContent = `
+                <video src="${videoUrl}" poster="${thumbnailUrl}" preload="metadata" playsinline controls class="clip-card-video"></video>
+                <div class="clip-overlay-play" title="Assistir e Editar Clipe">
+                    <i class="fa-solid fa-play"></i>
+                </div>
+            `;
 
             card.innerHTML = `
                 <div class="clip-preview-container" data-id="${escapeHtml(clipIdentifier)}" style="aspect-ratio: ${cardRatio};">
@@ -170,10 +204,37 @@ const UI = {
 
             container.appendChild(card);
 
+            // Clique na miniatura abre o modal de edição e reprodução completa
+            const previewContainer = card.querySelector('.clip-preview-container');
+            if (previewContainer) {
+                previewContainer.addEventListener('click', (e) => {
+                    if (e.target.closest('button') || e.target.closest('.clip-card-actions')) {
+                        return;
+                    }
+                    UI.openEditorModal(clip);
+                });
+            }
+
+            // Tratamento de renovação automática se o vídeo der erro (ex: URL expirada)
+            const cardVideo = card.querySelector('video');
+            if (cardVideo) {
+                cardVideo.addEventListener('error', async () => {
+                    try {
+                        const data = await fetchSignedUrl(clipIdentifier);
+                        if (data && data.download_url) {
+                            const freshUrl = resolveMediaUrl(data.download_url);
+                            clip.videoUrl = freshUrl;
+                            cardVideo.src = freshUrl;
+                        }
+                    } catch (e) {}
+                });
+            }
+
             // Vincula eventos especificamente para este novo card
             const editBtn = card.querySelector('.btn-edit');
             if (editBtn) {
-                editBtn.addEventListener('click', () => {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     UI.openEditorModal(clip);
                 });
             }
@@ -182,15 +243,30 @@ const UI = {
             if (downloadBtn) {
                 downloadBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
+                    const origHtml = downloadBtn.innerHTML;
+                    downloadBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Baixando...';
+                    downloadBtn.disabled = true;
+
                     try {
-                        const data = await fetchSignedUrl(clipIdentifier);
-                        window.location.href = data.download_url;
-                    } catch (err) {
-                        if (clip.videoUrl) {
-                            window.location.href = clip.videoUrl;
-                        } else {
-                            window.location.href = getClipVideoUrl(clipIdentifier);
+                        let downloadUrl = '';
+                        try {
+                            const data = await fetchSignedUrl(clipIdentifier);
+                            downloadUrl = resolveMediaUrl(data.download_url);
+                        } catch (err) {
+                            downloadUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
                         }
+
+                        const safeTitle = (clip.title || 'clipe')
+                            .replace(/[\\/*?:"<>|]/g, '')
+                            .trim()
+                            .replace(/\s+/g, '_');
+                        triggerFileDownload(downloadUrl, `${safeTitle}.mp4`);
+                        showToast('Download do clipe iniciado!', 'success', 3500);
+                    } catch (err) {
+                        showToast('Falha ao baixar clipe: ' + err.message, 'error');
+                    } finally {
+                        downloadBtn.innerHTML = origHtml;
+                        downloadBtn.disabled = false;
                     }
                 });
             }
@@ -236,23 +312,26 @@ const UI = {
             };
         }
 
-        // Reconstruir o video preview real
-        const videoUrl = clip.videoUrl || getClipVideoUrl(clipIdentifier);
-        const thumbnailUrl = clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier);
+        // Reconstruir o video preview real com URL resolvida
+        const videoUrl = resolveMediaUrl(clip.videoUrl || getClipVideoUrl(clipIdentifier));
+        const thumbnailUrl = resolveMediaUrl(clip.thumbnailUrl || getClipThumbnailUrl(clipIdentifier));
         videoContainer.innerHTML = `
             <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
-                <video id="editor-video-player" src="${videoUrl}" poster="${thumbnailUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay controls loop></video>
+                <video id="editor-video-player" src="${videoUrl}" poster="${thumbnailUrl}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
             </div>
         `;
         updatePlayerAspect(currentRatio);
 
-        // Atualiza para URL assinada recente se necessário
-        if (!clip.videoUrl) {
-            fetchSignedUrl(clipIdentifier).then(data => {
-                const player = document.getElementById('editor-video-player');
-                if (player) player.src = data.download_url;
-            }).catch(() => {});
-        }
+        // Sempre renova para URL assinada recente para garantir reprodução fluida no editor
+        fetchSignedUrl(clipIdentifier).then(data => {
+            const player = document.getElementById('editor-video-player');
+            if (player && data && data.download_url) {
+                const freshUrl = resolveMediaUrl(data.download_url);
+                clip.videoUrl = freshUrl;
+                player.src = freshUrl;
+                player.play().catch(() => {});
+            }
+        }).catch(() => {});
 
         transcriptContainer.innerHTML = '';
 
@@ -385,20 +464,25 @@ const UI = {
                         throw new Error('Tempo limite de renderização atingido. Tente novamente mais tarde.');
                     }
                     
-                    let refreshedUrl = getClipVideoUrl(clipIdentifier, `t=${Date.now()}`);
+                    let refreshedUrl = resolveMediaUrl(getClipVideoUrl(clipIdentifier, `t=${Date.now()}`));
                     try {
                         const signedData = await fetchSignedUrl(clipIdentifier);
-                        refreshedUrl = signedData.download_url;
+                        refreshedUrl = resolveMediaUrl(signedData.download_url);
                     } catch (e) {}
 
-                    // Baixar automaticamente apenas após conclusão confirmada
-                    window.location.href = refreshedUrl;
+                    // Baixar automaticamente apenas após conclusão confirmada sem navegar para fora da página
+                    const safeExportTitle = (clip.title || 'clipe_exportado')
+                        .replace(/[\\/*?:"<>|]/g, '')
+                        .trim()
+                        .replace(/\s+/g, '_');
+                    triggerFileDownload(refreshedUrl, `${safeExportTitle}.mp4`);
+                    showToast('Exportação concluída! Download iniciado.', 'success');
                     
                     // Recarregar preview
                     const currentVideoEl = document.getElementById('editor-video-player');
                     if (currentVideoEl) {
                         currentVideoEl.src = refreshedUrl;
-                        currentVideoEl.play();
+                        currentVideoEl.play().catch(() => {});
                     }
                     
                     clip.captionConfig = style;

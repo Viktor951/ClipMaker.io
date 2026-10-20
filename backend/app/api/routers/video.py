@@ -7,14 +7,15 @@ import asyncio
 from pathlib import Path
 from urllib.parse import urlparse
 
+import re
 from typing import Optional
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends, Request, Query
 from fastapi.responses import FileResponse, Response
 
 from backend.app.api.deps import limiter, get_current_user, get_current_user_optional
 from backend.app.core.config import settings
-from backend.app.core.security import create_signed_url_token, verify_signed_url_token
-from backend.app.db.db_service import create_project, get_clip_with_owner, count_active_projects_by_user
+from backend.app.core.security import create_signed_url_token, verify_signed_url_token, decode_access_token
+from backend.app.db.db_service import create_project, get_clip_with_owner, count_active_projects_by_user, get_user_by_email
 from backend.app.services.video_service import get_video_info
 from backend.app.worker.worker import process_video_task, download_and_process_url_task
 
@@ -237,14 +238,14 @@ async def generate_signed_url_endpoint(
     if str(clip_record["userId"]) != str(current_user["id"]):
         raise HTTPException(status_code=403, detail="Acesso negado.")
 
-    sig = create_signed_url_token(str(current_user["id"]), real_id, expires_in_sec=300)
+    sig = create_signed_url_token(str(current_user["id"]), real_id, expires_in_sec=86400)
     return {
         "status": "success",
         "clip_id": real_id,
         "sig": sig,
         "download_url": f"/api/videos/download/{real_id}?sig={sig}",
         "thumbnail_url": f"/api/videos/thumbnail/{real_id}?sig={sig}",
-        "expires_in": 300
+        "expires_in": 86400
     }
 
 
@@ -253,6 +254,7 @@ async def download_clip(
     clip_id: str,
     request: Request,
     sig: Optional[str] = Query(None),
+    download: Optional[bool] = Query(False),
     current_user: Optional[dict] = Depends(get_current_user_optional)
 ):
     safe_id = os.path.basename(clip_id)
@@ -299,6 +301,14 @@ async def download_clip(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Arquivo de vídeo não encontrado.")
 
+    # Determina cabeçalho de download (attachment) vs visualização em player (inline)
+    disposition_type = "attachment" if download else "inline"
+    download_filename = filename
+    if download and clip_record.get("title"):
+        clean_title = re.sub(r'[\\/*?:"<>|]', "", clip_record["title"]).strip().replace(" ", "_")
+        if clean_title:
+            download_filename = f"{clean_title[:60]}.mp4"
+
     # Suporte a entrega acelerada de vídeo pelo Nginx via X-Accel-Redirect
     use_accel = os.getenv("USE_NGINX_ACCEL", "false").lower() in ("true", "1")
 
@@ -306,7 +316,7 @@ async def download_clip(
         response = Response(status_code=200)
         response.headers["X-Accel-Redirect"] = f"/internal_videos/{filename}"
         response.headers["Content-Type"] = "video/mp4"
-        response.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+        response.headers["Content-Disposition"] = f'{disposition_type}; filename="{download_filename}"'
         response.headers["Accept-Ranges"] = "bytes"
         return response
 
@@ -314,7 +324,7 @@ async def download_clip(
     return FileResponse(
         path=str(file_path),
         media_type="video/mp4",
-        headers={"Content-Disposition": f'inline; filename="{filename}"'}
+        headers={"Content-Disposition": f'{disposition_type}; filename="{download_filename}"'}
     )
 
 

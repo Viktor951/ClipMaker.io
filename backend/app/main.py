@@ -61,7 +61,8 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH", "HEAD"],
-    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With", "Range"],
+    expose_headers=["Content-Disposition", "Content-Length", "Accept-Ranges", "Content-Range"],
 )
 
 # Registrando Roteadores (compatibilidade total: /api/auth, /api/videos, /api/projects e /api/v1)

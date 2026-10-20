@@ -83,7 +83,7 @@ async def get_project_status(project_id: str, current_user: dict = Depends(get_c
     clips_list = []
     for c in project.get("clips", []):
         clip_id_str = str(c.get("id"))
-        sig = create_signed_url_token(str(current_user["id"]), clip_id_str, expires_in_sec=300)
+        sig = create_signed_url_token(str(current_user["id"]), clip_id_str, expires_in_sec=86400)
         thumb_key = c.get("thumbnail_key") or c.get("thumbnailkey") or ""
         thumb_url = f"/api/videos/thumbnail/{clip_id_str}?sig={sig}" if thumb_key else ""
         video_url = f"/api/videos/download/{clip_id_str}?sig={sig}"

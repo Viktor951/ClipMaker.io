@@ -39,9 +39,9 @@ def decode_access_token(token: str):
     except PyJWTError:
         return None
 
-def create_signed_url_token(user_id: str, clip_id: str, expires_in_sec: int = 300) -> str:
+def create_signed_url_token(user_id: str, clip_id: str, expires_in_sec: int = 86400) -> str:
     """
-    Gera uma assinatura HMAC-SHA256 de curta duração (padrão 5 minutos) vinculada a clip_id e user_id.
+    Gera uma assinatura HMAC-SHA256 vinculada a clip_id e user_id (padrão 24 horas).
     Formato: base64url(user_id:clip_id:expires_ts:signature_hex)
     """
     expires_at = int(time.time()) + expires_in_sec
