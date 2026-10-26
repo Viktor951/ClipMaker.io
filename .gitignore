@@ -55,6 +55,13 @@ temp/
 
 # === Dependências e pacotes ===
 node_modules/
+venv/
+.venv/
+env/
+
+# === Backups e dumps locais ===
+backups/
+revisao_codigo.txt
 
 # === IDE e OS ===
 .vscode/
