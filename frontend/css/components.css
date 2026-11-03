@@ -776,6 +776,34 @@
   color: #F59E0B;
 }
 
+.btn-nav-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-200);
+  font-size: 0.86rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all var(--duration-fast) ease;
+}
+
+.btn-nav-home:hover {
+  background: var(--surface-3);
+  border-color: var(--accent-ai);
+  color: var(--accent-ai);
+  box-shadow: 0 0 12px rgba(0, 240, 118, 0.15);
+}
+
+.btn-nav-home i {
+  color: var(--accent-ai);
+  font-size: 0.95rem;
+}
+
 .btn-projects-nav {
   display: inline-flex;
   align-items: center;

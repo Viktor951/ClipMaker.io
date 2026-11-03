@@ -383,8 +383,23 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
     temp_render_out = os.path.join(temp_dir, f"temp_render_{uuid.uuid4().hex}.mp4")
 
     try:
-        generate_srt_from_words(words, srt_path)
         has_source = bool(source_video_path and os.path.exists(source_video_path))
+        if has_source and words and abs(float(new_start) - current_start) > 0.05:
+            delta_start = current_start - float(new_start)
+            new_clip_dur = max(0.1, float(new_end) - float(new_start))
+            shifted_words = []
+            for w in words:
+                w_copy = dict(w)
+                s_val = round(float(w_copy.get("start", 0.0)) + delta_start, 3)
+                e_val = round(float(w_copy.get("end", 0.0)) + delta_start, 3)
+                if e_val <= 0.0 or s_val >= new_clip_dur:
+                    continue
+                w_copy["start"] = max(0.0, s_val)
+                w_copy["end"] = min(new_clip_dur, max(w_copy["start"] + 0.05, e_val))
+                shifted_words.append(w_copy)
+            words = shifted_words
+
+        generate_srt_from_words(words, srt_path)
         
         if has_source:
             logger.info(f"Re-renderizando clipe {clip_id} em passe único a partir do vídeo fonte: {source_video_path} (face_center_x={face_center_x})")

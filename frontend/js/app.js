@@ -206,7 +206,16 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) throw new Error("Falha ao carregar lista de projetos.");
             const data = await res.json();
-            cachedUserProjects = data.projects || [];
+            cachedUserProjects = (data.projects || []).filter(p => {
+                const errorMsgRaw = (p.errorMessage || p.errormessage || '').toLowerCase();
+                const rawTitle = p.title || '';
+                return !(p.status === 'FAILED' && (rawTitle === 'Importação por URL' || errorMsgRaw.includes('baixar o vídeo') || errorMsgRaw.includes('link é válido')));
+            }).map(p => {
+                if (p.title === 'Importação por URL') {
+                    p.title = p.sourceUrl ? 'Vídeo Online' : 'Projeto de Vídeo';
+                }
+                return p;
+            });
             applyProjectsFilter();
             fetchUserProfile();
         } catch (err) {
@@ -276,6 +285,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         projectsListContainer.innerHTML = '';
         projects.forEach(p => {
+            const errorMsgRaw = (p.errorMessage || p.errormessage || '').toLowerCase();
+            const rawTitle = p.title || '';
+            if (p.status === 'FAILED' && (rawTitle === 'Importação por URL' || errorMsgRaw.includes('baixar o vídeo') || errorMsgRaw.includes('link é válido'))) {
+                return;
+            }
+            const cleanProjectTitle = rawTitle === 'Importação por URL' ? (p.sourceUrl ? 'Vídeo Online' : 'Projeto de Vídeo') : (rawTitle || 'Projeto sem título');
+
             const card = document.createElement('div');
             card.className = 'project-item-card';
             card.id = `project-card-${p.id}`;
@@ -293,9 +309,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Thumbnail da esquerda
             const thumbKey = p.firstThumbnailKey || p.firstthumbnailkey;
+            const thumbSignedUrl = p.firstThumbnailUrl || p.firstthumbnailurl;
             let thumbHtml = '';
-            if (thumbKey) {
-                const thumbUrl = (typeof getClipThumbnailUrl === 'function') ? getClipThumbnailUrl(thumbKey) : `${API_BASE}/videos/thumbnail/${encodeURIComponent(thumbKey)}`;
+            if (thumbSignedUrl || thumbKey) {
+                const thumbUrl = thumbSignedUrl
+                    ? ((typeof resolveMediaUrl === 'function') ? resolveMediaUrl(thumbSignedUrl) : thumbSignedUrl)
+                    : ((typeof getClipThumbnailUrl === 'function') ? getClipThumbnailUrl(thumbKey) : `${API_BASE}/videos/thumbnail/${encodeURIComponent(thumbKey)}`);
                 thumbHtml = `
                     <div class="project-card-thumb" aria-hidden="true">
                         <img src="${thumbUrl}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<span class=\\'project-card-thumb-placeholder\\'><i class=\\'fa-solid fa-clapperboard\\'></i></span>';">
@@ -342,8 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
             card.innerHTML = `
                 ${thumbHtml}
                 <div class="project-item-info">
-                    <div class="project-item-title" title="${escapeHtml(p.title || 'Projeto sem título')}">
-                        ${escapeHtml(p.title || 'Projeto sem título')}
+                    <div class="project-item-title" title="${escapeHtml(cleanProjectTitle)}">
+                        ${escapeHtml(cleanProjectTitle)}
                     </div>
                     <div class="project-item-meta">
                         ${statusPill}
@@ -413,6 +432,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusFilter = projectsStatusSelect?.value || 'ALL';
 
         const filtered = cachedUserProjects.filter(p => {
+            const errorMsgRaw = (p.errorMessage || p.errormessage || '').toLowerCase();
+            const rawTitle = p.title || '';
+            if (p.status === 'FAILED' && (rawTitle === 'Importação por URL' || errorMsgRaw.includes('baixar o vídeo') || errorMsgRaw.includes('link é válido'))) {
+                return false;
+            }
+
             const matchesQuery = !query ||
                 (p.title && p.title.toLowerCase().includes(query)) ||
                 (p.id && p.id.toLowerCase().includes(query));
@@ -636,10 +661,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const heroSection = document.getElementById('hero-section');
         const processingSection = document.getElementById('processing-section');
         const resultsSection = document.getElementById('results-section');
+        const floatingHomeBtn = document.getElementById('btn-floating-home');
 
         if (heroSection) heroSection.classList.toggle('hidden', viewName !== 'home');
         if (processingSection) processingSection.classList.toggle('hidden', viewName !== 'processing');
         if (resultsSection) resultsSection.classList.toggle('hidden', viewName !== 'results');
+        if (floatingHomeBtn) floatingHomeBtn.classList.toggle('hidden', viewName === 'home');
     }
 
     const stepLabels = [
@@ -719,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cancelBtn) cancelBtn.classList.add('hidden');
         if (btnGenerateUrl) {
             btnGenerateUrl.disabled = false;
-            btnGenerateUrl.innerHTML = 'Processar Link';
+            btnGenerateUrl.innerHTML = '<span>Gerar Clipes</span> <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>';
         }
         if (fileInput) fileInput.disabled = false;
         if (btnBrowse) btnBrowse.disabled = false;
@@ -1241,23 +1268,83 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    const btnNewVideo = document.getElementById('btn-new-video');
-    if (btnNewVideo) {
-        btnNewVideo.addEventListener('click', () => {
-            stopPolling();
-            localStorage.removeItem('clipmaker_active_project');
-            localStorage.removeItem('clipmaker_active_source_name');
+    function navigateToHome(options = {}) {
+        stopPolling();
+        localStorage.removeItem('clipmaker_active_project');
+        localStorage.removeItem('clipmaker_active_source_name');
 
-            const url = new URL(window.location.href);
-            url.searchParams.delete('project');
-            history.pushState({ page: 'home' }, '', url.pathname);
+        if (typeof UI !== 'undefined' && UI.closeEditorModal) {
+            UI.closeEditorModal();
+        }
+        const projectsModal = document.getElementById('projects-modal');
+        if (projectsModal && !projectsModal.classList.contains('hidden')) {
+            projectsModal.classList.add('hidden');
+        }
+        const authModal = document.getElementById('auth-modal');
+        if (authModal && !authModal.classList.contains('hidden')) {
+            authModal.classList.add('hidden');
+        }
 
-            switchView('home');
+        const url = new URL(window.location.href);
+        url.searchParams.delete('project');
+        history.pushState({ page: 'home' }, '', url.pathname);
+
+        switchView('home');
+
+        if (options.resetInputs) {
             if (videoUrlInput) videoUrlInput.value = '';
             if (fileInput) fileInput.value = '';
             resetUIState();
+        }
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    const btnNavHome = document.getElementById('btn-nav-home');
+    if (btnNavHome) {
+        btnNavHome.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome();
         });
     }
+
+    const btnBackHome = document.getElementById('btn-back-home');
+    if (btnBackHome) {
+        btnBackHome.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome();
+        });
+    }
+
+    const btnFloatingHome = document.getElementById('btn-floating-home');
+    if (btnFloatingHome) {
+        btnFloatingHome.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome();
+        });
+    }
+
+    const btnNewVideo = document.getElementById('btn-new-video');
+    if (btnNewVideo) {
+        btnNewVideo.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome({ resetInputs: true });
+        });
+    }
+
+    document.querySelectorAll('.logo').forEach((logo) => {
+        logo.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome();
+        });
+    });
+
+    document.querySelectorAll('a[href="#hero-section"]').forEach((link) => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToHome();
+        });
+    });
 
     // Modal navigation handling
     const btnCloseModal = document.getElementById('btn-close-modal');
