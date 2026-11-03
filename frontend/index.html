@@ -28,15 +28,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     
     <!-- Icons: Subset vetorial leve local (~3KB, substitui Font Awesome de ~500KB) -->
-    <link rel="stylesheet" href="css/icons.css?v=ce2386c9">
+    <link rel="stylesheet" href="css/icons.css?v=ea9e1b6d">
     
     <!-- Stylesheets -->
     <link rel="stylesheet" href="css/tokens.css?v=645ab069">
     <link rel="stylesheet" href="css/reset.css?v=5786c012">
     <link rel="stylesheet" href="css/animations.css?v=fb639fe7">
-    <link rel="stylesheet" href="css/layout.css?v=2e9a82ce">
-    <link rel="stylesheet" href="css/components.css?v=2d391347">
-    <link rel="stylesheet" href="css/responsive.css?v=60872474">
+    <link rel="stylesheet" href="css/layout.css?v=95a33633">
+    <link rel="stylesheet" href="css/components.css?v=cd6d293f">
+    <link rel="stylesheet" href="css/responsive.css?v=824368bb">
 </head>
 <body>
 
@@ -46,68 +46,65 @@
             <a href="#" class="logo" aria-label="ClipMaker.io Página Inicial">
                 <svg class="logo-symbol" width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                     <defs>
-                        <radialGradient id="cmNavBadgeBg" cx="50%" cy="32%" r="68%">
-                            <stop offset="0%" stop-color="#142436"/>
-                            <stop offset="55%" stop-color="#0B131C"/>
-                            <stop offset="100%" stop-color="#04070B"/>
-                        </radialGradient>
-                        <linearGradient id="cmNavBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
-                            <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
-                            <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
-                            <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
-                            <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
-                        </linearGradient>
-                        <linearGradient id="cmNavTopGleam" x1="22" y1="4.5" x2="78" y2="4.5" gradientUnits="userSpaceOnUse">
-                            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-                            <stop offset="30%" stop-color="#D6ECFF" stop-opacity="0.8"/>
-                            <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.95"/>
-                            <stop offset="70%" stop-color="#D6ECFF" stop-opacity="0.8"/>
-                            <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-                        </linearGradient>
-                        <linearGradient id="cmNavLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                        <!-- Gradiente Fatia 1 (Esquerda: Verde Menta Claro -> Verde Studio Lime -> Esmeralda) -->
+                        <linearGradient id="cmNavSlice1" x1="16" y1="6" x2="32" y2="88" gradientUnits="userSpaceOnUse">
                             <stop offset="0%" stop-color="#76FFB4"/>
-                            <stop offset="30%" stop-color="#2EF287"/>
-                            <stop offset="75%" stop-color="#00E575"/>
-                            <stop offset="100%" stop-color="#00C853"/>
+                            <stop offset="30%" stop-color="#00F076"/>
+                            <stop offset="70%" stop-color="#00C853"/>
+                            <stop offset="100%" stop-color="#047857"/>
                         </linearGradient>
-                        <linearGradient id="cmNavPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
-                            <stop offset="0%" stop-color="#BAF7D0"/>
-                            <stop offset="40%" stop-color="#6EE7B7"/>
-                            <stop offset="100%" stop-color="#10B981"/>
+
+                        <!-- Gradiente Fatia 2 (Centro: Menta Neon -> Studio Lime -> Jade Profundo) -->
+                        <linearGradient id="cmNavSlice2" x1="44" y1="8" x2="55" y2="88" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#A7F3D0"/>
+                            <stop offset="25%" stop-color="#34D399"/>
+                            <stop offset="60%" stop-color="#00F076"/>
+                            <stop offset="100%" stop-color="#065F46"/>
                         </linearGradient>
-                        <linearGradient id="cmNavInnerGlow" x1="50" y1="5" x2="50" y2="95" gradientUnits="userSpaceOnUse">
-                            <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.4"/>
-                            <stop offset="50%" stop-color="#00F076" stop-opacity="0.05"/>
-                            <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+
+                        <!-- Gradiente Fatia 3 (Ponta: Esmeralda Elétrico -> Studio Lime -> Verde Floresta) -->
+                        <linearGradient id="cmNavSlice3" x1="68" y1="20" x2="88" y2="60" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#6EE7B7"/>
+                            <stop offset="35%" stop-color="#00F076"/>
+                            <stop offset="75%" stop-color="#00C853"/>
+                            <stop offset="100%" stop-color="#047857"/>
                         </linearGradient>
-                        <filter id="cmNavNeonAura" x="20" y="8" width="60" height="84" filterUnits="userSpaceOnUse">
-                            <feGaussianBlur stdDeviation="3.2" result="blur"/>
-                            <feFlood flood-color="#00F076" flood-opacity="0.4" result="color"/>
-                            <feComposite in2="blur" operator="in" result="glow"/>
-                            <feMerge>
-                                <feMergeNode in="glow"/>
-                                <feMergeNode in="SourceGraphic"/>
-                            </feMerge>
-                        </filter>
+
+                        <!-- Brilho Neon na Lâmina 2 -->
+                        <linearGradient id="cmNavBlade2" x1="44" y1="7" x2="32" y2="95" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                            <stop offset="30%" stop-color="#A7F3D0" stop-opacity="0.9"/>
+                            <stop offset="70%" stop-color="#00F076" stop-opacity="0.5"/>
+                            <stop offset="100%" stop-color="#047857" stop-opacity="0.15"/>
+                        </linearGradient>
+
+                        <!-- Brilho Neon na Lâmina 3 -->
+                        <linearGradient id="cmNavBlade3" x1="71" y1="21" x2="59" y2="84" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                            <stop offset="30%" stop-color="#A7F3D0" stop-opacity="0.85"/>
+                            <stop offset="70%" stop-color="#00F076" stop-opacity="0.4"/>
+                            <stop offset="100%" stop-color="#047857" stop-opacity="0.1"/>
+                        </linearGradient>
                     </defs>
-                    <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmNavBadgeBg)" stroke="url(#cmNavBadgeRim)" stroke-width="2.2"/>
-                    <rect x="5.5" y="5.5" width="89" height="89" rx="19" fill="none" stroke="url(#cmNavInnerGlow)" stroke-width="1"/>
-                    <path d="M 26 5 Q 50 3.8 74 5" stroke="url(#cmNavTopGleam)" stroke-width="1.8" stroke-linecap="round"/>
-                    <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
-                        <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
-                        <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
-                        <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
-                    </g>
-                    <g filter="url(#cmNavNeonAura)">
-                        <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmNavLimeStroke)" stroke-width="6.2"/>
-                    </g>
-                    <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmNavPlayFill)"/>
+
+                    <!-- Fatia 1 (Base Esquerda) -->
+                    <path d="M 18 6.5 C 13 6.5 10 10 10 16 L 10 83 C 10 88.5 13 92 18.5 92 C 22 92 25.5 90 28 87.5 L 38.5 18.5 C 39.5 16 38 14 35.5 13 L 23 7.5 C 21.5 6.8 19.8 6.5 18 6.5 Z" fill="url(#cmNavSlice1)"/>
+
+                    <!-- Fatia 2 (Lâmina Central Dinâmica) -->
+                    <path d="M 44.5 7.5 L 43.5 17 L 33 84 L 32 95 L 37 84 L 56.5 72 L 65.5 30.5 L 46.5 19.5 L 44.5 7.5 Z" fill="url(#cmNavSlice2)"/>
+                    <path d="M 44.5 7.5 L 32 95" stroke="url(#cmNavBlade2)" stroke-width="1.3" stroke-linecap="round"/>
+
+                    <!-- Fatia 3 (Ponta Apex Dinâmica) -->
+                    <path d="M 71.5 21 L 70.5 31 L 61 74 L 59.5 84 L 66.5 68 L 86.5 56.5 C 89.5 54 89.5 48 86.5 45.3 L 72.5 33.5 L 71.5 21 Z" fill="url(#cmNavSlice3)"/>
+                    <path d="M 71.5 21 L 59.5 84" stroke="url(#cmNavBlade3)" stroke-width="1.2" stroke-linecap="round"/>
                 </svg>
                 <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
                 <span class="version-badge">v4.0</span>
             </a>
             <div class="nav-links">
+                <button type="button" class="btn-nav-home" id="btn-nav-home" title="Ir para a tela inicial" aria-label="Ir para a tela inicial">
+                    <i class="fa-solid fa-house" aria-hidden="true"></i> <span>Início</span>
+                </button>
                 <a href="#como-funciona">Como funciona</a>
                 <a href="#recursos">Recursos</a>
                 <span id="nav-credits-badge" class="nav-credits-badge" style="display: none;" title="Saldo de créditos disponíveis para geração de cortes">
@@ -487,18 +484,25 @@
         <!-- ═══════════ RESULTS ═══════════ -->
         <section class="results hidden" id="results-section">
             <div class="results-header">
-                <div class="video-info">
-                    <div class="video-thumbnail">
-                        <i class="fa-solid fa-clapperboard"></i>
-                    </div>
-                    <div>
-                        <h2>Clipes Gerados</h2>
-                        <p class="source-name">source.mp4</p>
+                <div class="results-header-left">
+                    <button type="button" class="btn-back-home" id="btn-back-home" title="Voltar para a tela inicial" aria-label="Voltar para a tela inicial">
+                        <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> <span>Voltar ao Início</span>
+                    </button>
+                    <div class="video-info">
+                        <div class="video-thumbnail">
+                            <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
+                        </div>
+                        <div>
+                            <h2>Clipes Gerados</h2>
+                            <p class="source-name">source.mp4</p>
+                        </div>
                     </div>
                 </div>
-                <button class="btn-secondary btn-sm" id="btn-new-video">
-                    <i class="fa-solid fa-plus"></i> Novo Vídeo
-                </button>
+                <div class="results-header-actions">
+                    <button type="button" class="btn-secondary btn-sm" id="btn-new-video" title="Criar novos clipes a partir de outro vídeo">
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i> Novo Vídeo
+                    </button>
+                </div>
             </div>
 
             <div class="clips-grid" id="clips-container">
@@ -664,6 +668,12 @@
             </div>
         </div>
 
+        <!-- Botão Flutuante Voltar ao Início (ativo fora da tela inicial) -->
+        <button type="button" class="btn-floating-home hidden" id="btn-floating-home" title="Voltar para a tela inicial" aria-label="Voltar para a tela inicial">
+            <i class="fa-solid fa-house" aria-hidden="true"></i>
+            <span>Voltar ao Início</span>
+        </button>
+
         <!-- ═══════════ TOAST CONTAINER ═══════════ -->
         <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
@@ -676,63 +686,57 @@
                 <a href="#" class="logo" aria-label="ClipMaker.io Início">
                     <svg class="logo-symbol" width="30" height="30" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <defs>
-                            <radialGradient id="cmFootBadgeBg" cx="50%" cy="32%" r="68%">
-                                <stop offset="0%" stop-color="#142436"/>
-                                <stop offset="55%" stop-color="#0B131C"/>
-                                <stop offset="100%" stop-color="#04070B"/>
-                            </radialGradient>
-                            <linearGradient id="cmFootBadgeRim" x1="50" y1="3" x2="50" y2="97" gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stop-color="#B8DCFF" stop-opacity="0.85"/>
-                                <stop offset="25%" stop-color="#4B77A8" stop-opacity="0.55"/>
-                                <stop offset="70%" stop-color="#1C2D40" stop-opacity="0.4"/>
-                                <stop offset="100%" stop-color="#2D4D73" stop-opacity="0.65"/>
-                            </linearGradient>
-                            <linearGradient id="cmFootTopGleam" x1="22" y1="4.5" x2="78" y2="4.5" gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0"/>
-                                <stop offset="30%" stop-color="#D6ECFF" stop-opacity="0.8"/>
-                                <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.95"/>
-                                <stop offset="70%" stop-color="#D6ECFF" stop-opacity="0.8"/>
-                                <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
-                            </linearGradient>
-                            <linearGradient id="cmFootLimeStroke" x1="50" y1="18" x2="50" y2="82" gradientUnits="userSpaceOnUse">
+                            <!-- Gradiente Fatia 1 (Esquerda: Verde Menta Claro -> Verde Studio Lime -> Esmeralda) -->
+                            <linearGradient id="cmFootSlice1" x1="16" y1="6" x2="32" y2="88" gradientUnits="userSpaceOnUse">
                                 <stop offset="0%" stop-color="#76FFB4"/>
-                                <stop offset="30%" stop-color="#2EF287"/>
-                                <stop offset="75%" stop-color="#00E575"/>
-                                <stop offset="100%" stop-color="#00C853"/>
+                                <stop offset="30%" stop-color="#00F076"/>
+                                <stop offset="70%" stop-color="#00C853"/>
+                                <stop offset="100%" stop-color="#047857"/>
                             </linearGradient>
-                            <linearGradient id="cmFootPlayFill" x1="43" y1="40" x2="58" y2="58" gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stop-color="#BAF7D0"/>
-                                <stop offset="40%" stop-color="#6EE7B7"/>
-                                <stop offset="100%" stop-color="#10B981"/>
+
+                            <!-- Gradiente Fatia 2 (Centro: Menta Neon -> Studio Lime -> Jade Profundo) -->
+                            <linearGradient id="cmFootSlice2" x1="44" y1="8" x2="55" y2="88" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#A7F3D0"/>
+                                <stop offset="25%" stop-color="#34D399"/>
+                                <stop offset="60%" stop-color="#00F076"/>
+                                <stop offset="100%" stop-color="#065F46"/>
                             </linearGradient>
-                            <linearGradient id="cmFootInnerGlow" x1="50" y1="5" x2="50" y2="95" gradientUnits="userSpaceOnUse">
-                                <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.4"/>
-                                <stop offset="50%" stop-color="#00F076" stop-opacity="0.05"/>
-                                <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+
+                            <!-- Gradiente Fatia 3 (Ponta: Esmeralda Elétrico -> Studio Lime -> Verde Floresta) -->
+                            <linearGradient id="cmFootSlice3" x1="68" y1="20" x2="88" y2="60" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#6EE7B7"/>
+                                <stop offset="35%" stop-color="#00F076"/>
+                                <stop offset="75%" stop-color="#00C853"/>
+                                <stop offset="100%" stop-color="#047857"/>
                             </linearGradient>
-                            <filter id="cmFootNeonAura" x="20" y="8" width="60" height="84" filterUnits="userSpaceOnUse">
-                                <feGaussianBlur stdDeviation="3.2" result="blur"/>
-                                <feFlood flood-color="#00F076" flood-opacity="0.4" result="color"/>
-                                <feComposite in2="blur" operator="in" result="glow"/>
-                                <feMerge>
-                                    <feMergeNode in="glow"/>
-                                    <feMergeNode in="SourceGraphic"/>
-                                </feMerge>
-                            </filter>
+
+                            <!-- Brilho Neon na Lâmina 2 -->
+                            <linearGradient id="cmFootBlade2" x1="44" y1="7" x2="32" y2="95" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                                <stop offset="30%" stop-color="#A7F3D0" stop-opacity="0.9"/>
+                                <stop offset="70%" stop-color="#00F076" stop-opacity="0.5"/>
+                                <stop offset="100%" stop-color="#047857" stop-opacity="0.15"/>
+                            </linearGradient>
+
+                            <!-- Brilho Neon na Lâmina 3 -->
+                            <linearGradient id="cmFootBlade3" x1="71" y1="21" x2="59" y2="84" gradientUnits="userSpaceOnUse">
+                                <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95"/>
+                                <stop offset="30%" stop-color="#A7F3D0" stop-opacity="0.85"/>
+                                <stop offset="70%" stop-color="#00F076" stop-opacity="0.4"/>
+                                <stop offset="100%" stop-color="#047857" stop-opacity="0.1"/>
+                            </linearGradient>
                         </defs>
-                        <rect x="3.5" y="3.5" width="93" height="93" rx="21" fill="url(#cmFootBadgeBg)" stroke="url(#cmFootBadgeRim)" stroke-width="2.2"/>
-                        <rect x="5.5" y="5.5" width="89" height="89" rx="19" fill="none" stroke="url(#cmFootInnerGlow)" stroke-width="1"/>
-                        <path d="M 26 5 Q 50 3.8 74 5" stroke="url(#cmFootTopGleam)" stroke-width="1.8" stroke-linecap="round"/>
-                        <g stroke="#EDF2F7" stroke-width="6.2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M 23.5 35 V 26 C 23.5 24.2 24.8 23 26.6 23 H 34.5"/>
-                            <path d="M 65.5 23 H 73.4 C 75.2 23 76.5 24.2 76.5 26 V 35"/>
-                            <path d="M 23.5 65 V 74 C 23.5 75.8 24.8 77 26.6 77 H 34.5"/>
-                            <path d="M 65.5 77 H 73.4 C 75.2 77 76.5 75.8 76.5 74 V 65"/>
-                        </g>
-                        <g filter="url(#cmFootNeonAura)">
-                            <rect x="35" y="19" width="30" height="62" rx="9.5" fill="#02140A" fill-opacity="0.4" stroke="url(#cmFootLimeStroke)" stroke-width="6.2"/>
-                        </g>
-                        <path d="M 44 41.5 C 44 40.2 45.4 39.4 46.5 40.1 L 56.8 47.8 C 57.8 48.5 57.8 49.9 56.8 50.6 L 46.5 58.3 C 45.4 59 44 58.2 44 56.9 Z" fill="url(#cmFootPlayFill)"/>
+
+                        <!-- Fatia 1 (Base Esquerda) -->
+                        <path d="M 18 6.5 C 13 6.5 10 10 10 16 L 10 83 C 10 88.5 13 92 18.5 92 C 22 92 25.5 90 28 87.5 L 38.5 18.5 C 39.5 16 38 14 35.5 13 L 23 7.5 C 21.5 6.8 19.8 6.5 18 6.5 Z" fill="url(#cmFootSlice1)"/>
+
+                        <!-- Fatia 2 (Lâmina Central Dinâmica) -->
+                        <path d="M 44.5 7.5 L 43.5 17 L 33 84 L 32 95 L 37 84 L 56.5 72 L 65.5 30.5 L 46.5 19.5 L 44.5 7.5 Z" fill="url(#cmFootSlice2)"/>
+                        <path d="M 44.5 7.5 L 32 95" stroke="url(#cmFootBlade2)" stroke-width="1.3" stroke-linecap="round"/>
+
+                        <!-- Fatia 3 (Ponta Apex Dinâmica) -->
+                        <path d="M 71.5 21 L 70.5 31 L 61 74 L 59.5 84 L 66.5 68 L 86.5 56.5 C 89.5 54 89.5 48 86.5 45.3 L 72.5 33.5 L 71.5 21 Z" fill="url(#cmFootSlice3)"/>
+                        <path d="M 71.5 21 L 59.5 84" stroke="url(#cmFootBlade3)" stroke-width="1.2" stroke-linecap="round"/>
                     </svg>
                     <span class="logo-text">ClipMaker<span class="logo-dot">.io</span></span>
                 </a>
@@ -773,7 +777,7 @@
 
     <!-- Scripts com defer e versionamento -->
     <script src="js/ui.js?v=6c0ff74a" defer></script>
-    <script src="js/app.js?v=9483d48a" defer></script>
+    <script src="js/app.js?v=566ff242" defer></script>
 
 </body>
 </html>

@@ -508,6 +508,7 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
             LEFT JOIN clips c ON p.id = c.projectId
             WHERE p.userId = $1
               AND p.createdAt < (SELECT createdAt FROM projects WHERE id = $2)
+              AND NOT (p.status = 'FAILED' AND (p.title = 'Importação por URL' OR LOWER(p.errorMessage) LIKE '%baixar o vídeo%'))
             GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
             ORDER BY p.createdAt DESC
             LIMIT $3
@@ -529,6 +530,7 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
             FROM projects p
             LEFT JOIN clips c ON p.id = c.projectId
             WHERE p.userId = $1
+              AND NOT (p.status = 'FAILED' AND (p.title = 'Importação por URL' OR LOWER(p.errorMessage) LIKE '%baixar o vídeo%'))
             GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
             ORDER BY p.createdAt DESC
             LIMIT $2
@@ -539,10 +541,13 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
     for r in rows:
         created_val = r.get("createdat") or r.get("createdAt")
         updated_val = r.get("updatedat") or r.get("updatedAt")
+        raw_title = r.get("title") or "Sem título"
+        if raw_title == "Importação por URL":
+            raw_title = "Vídeo Online"
         
         projects.append({
             "id": r.get("id"),
-            "title": r.get("title") or "Sem título",
+            "title": raw_title,
             "status": r.get("status"),
             "durationSec": float(r.get("durationsec") or 0.0),
             "clipCount": int(r.get("clipcount") or 0),
