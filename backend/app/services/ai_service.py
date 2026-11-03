@@ -11,6 +11,8 @@ load_dotenv()
 TARGET_CLIPS_COUNT = 5
 MIN_DURATION_SEC = 60
 MAX_DURATION_SEC = 90
+GEMINI_REQUEST_TIMEOUT_SEC = float(os.getenv("GEMINI_REQUEST_TIMEOUT_SEC", "15"))
+GEMINI_TOTAL_BUDGET_SEC = float(os.getenv("GEMINI_TOTAL_BUDGET_SEC", "20"))
 
 logger = logging.getLogger("clipmaker.ai")
 if not logger.handlers:
@@ -276,19 +278,30 @@ TRANSCRIÇÃO DO VÍDEO:
     models_to_try = [m.strip() for m in raw_models.split(",") if m.strip()]
     total_attempts = 0
     had_429 = False
+    t_llm_start = time.time()
+    budget_exhausted = False
     
     for model_name in models_to_try:
+        if budget_exhausted:
+            break
         for attempt in range(3):
+            remaining = GEMINI_TOTAL_BUDGET_SEC - (time.time() - t_llm_start)
+            if remaining < 2.0:
+                logger.warning(f"Orçamento total do Gemini esgotado ({remaining:.1f}s restantes). Acionando fallback...")
+                budget_exhausted = True
+                break
             total_attempts += 1
             try:
-                logger.info(f"Tentativa {attempt+1} com modelo: {model_name}")
+                req_timeout = min(GEMINI_REQUEST_TIMEOUT_SEC, remaining)
+                logger.info(f"Tentativa {attempt+1} com modelo: {model_name} (timeout={req_timeout:.1f}s)")
                 model = genai.GenerativeModel(model_name)
                 
                 response = model.generate_content(
                     prompt,
                     generation_config=genai.GenerationConfig(
                         response_mime_type="application/json"
-                    )
+                    ),
+                    request_options={"timeout": req_timeout}
                 )
                 
                 raw_json = response.text
@@ -341,32 +354,51 @@ TRANSCRIÇÃO DO VÍDEO:
                 
             except Exception as e:
                 err_str = str(e)
-                if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
+                err_lower = err_str.lower()
+                remaining = GEMINI_TOTAL_BUDGET_SEC - (time.time() - t_llm_start)
+
+                if (
+                    type(e).__name__ == "DeadlineExceeded"
+                    or "deadline" in err_lower
+                    or "504" in err_str
+                    or "timed out" in err_lower
+                ):
+                    logger.warning(f"Timeout/DeadlineExceeded com modelo '{model_name}': {err_str[:100]}. Avançando para o próximo modelo...")
+                    break
+
+                if "429" in err_str or "quota" in err_lower or "resourceexhausted" in err_lower:
                     had_429 = True
                     logger.warning(f"LLM 429 Quota Exceeded com modelo '{model_name}'.")
                     delay_match = re.search(r"retry.*?(\d+(?:\.\d+)?)\s*s", err_str, re.IGNORECASE)
                     retry_delay = float(delay_match.group(1)) if delay_match else 0.0
-                    if 0.0 < retry_delay < 10.0:
-                        logger.info(f"Retry-delay viável detectado ({retry_delay:.1f}s < 10s). Aguardando {retry_delay:.1f}s...")
+                    if 0.0 < retry_delay < 10.0 and (retry_delay + 2.0) <= remaining:
+                        logger.info(f"Retry-delay viável detectado ({retry_delay:.1f}s). Aguardando {retry_delay:.1f}s...")
                         time.sleep(retry_delay)
                         continue
                     else:
-                        logger.warning(f"Sem retry-delay menor que 10s para {model_name}. NÃO tentando novamente este modelo. Avançando para o próximo...")
+                        logger.warning(f"Retry-delay inviável para {model_name} no orçamento restante ({remaining:.1f}s). Avançando para o próximo...")
                         break
                 else:
                     logger.warning(f"Tentativa {attempt+1} falhou com {model_name}: {err_str[:100]}")
                 
-                if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_str.lower():
+                if "503" in err_str or "UNAVAILABLE" in err_str or "overloaded" in err_lower:
                     wait_time = (attempt + 1) * 10
-                    logger.info(f"API sobrecarregada. Aguardando {wait_time}s antes de nova tentativa...")
-                    time.sleep(wait_time)
-                    continue
+                    if (wait_time + 2.0) <= remaining:
+                        logger.info(f"API sobrecarregada. Aguardando {wait_time}s antes de nova tentativa...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        logger.warning(f"Sem orçamento restante ({remaining:.1f}s) para aguardar {wait_time}s em 503 de {model_name}. Avançando para o próximo...")
+                        break
                 
                 if "404" in err_str or "NOT_FOUND" in err_str:
                     logger.warning(f"Modelo {model_name} não disponível. Tentando próximo...")
                     break
-                    
-                time.sleep(3)
+                
+                if remaining < 2.0:
+                    budget_exhausted = True
+                    break
+                time.sleep(min(3.0, max(0.0, remaining - 2.0)))
     
     _LAST_LLM_META = {
         "model": "nenhum (todos falharam)",
