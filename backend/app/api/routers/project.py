@@ -60,7 +60,26 @@ async def list_user_projects(
     cursor: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    projects = await get_user_projects(str(current_user["id"]), limit=limit, cursor=cursor)
+    user_id = str(current_user["id"])
+    projects = await get_user_projects(user_id, limit=limit, cursor=cursor)
+    for p in projects:
+        thumb_key = p.get("firstThumbnailKey") or ""
+        if thumb_key:
+            thumb_filename = os.path.basename(thumb_key)
+            thumb_path = (TEMP_DIR / thumb_filename).resolve()
+            if thumb_path.is_file():
+                real_id = thumb_filename
+                if real_id.startswith("thumb_") or real_id.startswith("clip_"):
+                    real_id = real_id[real_id.find("_") + 1:]
+                if real_id.endswith(".jpg") or real_id.endswith(".mp4"):
+                    real_id = real_id[:real_id.rfind(".")]
+                sig = create_signed_url_token(user_id, real_id, expires_in_sec=86400)
+                p["firstThumbnailUrl"] = f"/api/videos/thumbnail/{real_id}?sig={sig}"
+            else:
+                p["firstThumbnailKey"] = ""
+                p["firstThumbnailUrl"] = ""
+        else:
+            p["firstThumbnailUrl"] = ""
     next_cursor = projects[-1]["id"] if len(projects) == limit else None
     return {
         "status": "success",

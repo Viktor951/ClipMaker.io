@@ -309,9 +309,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Thumbnail da esquerda
             const thumbKey = p.firstThumbnailKey || p.firstthumbnailkey;
+            const thumbSignedUrl = p.firstThumbnailUrl || p.firstthumbnailurl;
             let thumbHtml = '';
-            if (thumbKey) {
-                const thumbUrl = (typeof getClipThumbnailUrl === 'function') ? getClipThumbnailUrl(thumbKey) : `${API_BASE}/videos/thumbnail/${encodeURIComponent(thumbKey)}`;
+            if (thumbSignedUrl || thumbKey) {
+                const thumbUrl = thumbSignedUrl
+                    ? ((typeof resolveMediaUrl === 'function') ? resolveMediaUrl(thumbSignedUrl) : thumbSignedUrl)
+                    : ((typeof getClipThumbnailUrl === 'function') ? getClipThumbnailUrl(thumbKey) : `${API_BASE}/videos/thumbnail/${encodeURIComponent(thumbKey)}`);
                 thumbHtml = `
                     <div class="project-card-thumb" aria-hidden="true">
                         <img src="${thumbUrl}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<span class=\\'project-card-thumb-placeholder\\'><i class=\\'fa-solid fa-clapperboard\\'></i></span>';">
@@ -743,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cancelBtn) cancelBtn.classList.add('hidden');
         if (btnGenerateUrl) {
             btnGenerateUrl.disabled = false;
-            btnGenerateUrl.innerHTML = 'Processar Link';
+            btnGenerateUrl.innerHTML = '<span>Gerar Clipes</span> <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>';
         }
         if (fileInput) fileInput.disabled = false;
         if (btnBrowse) btnBrowse.disabled = false;

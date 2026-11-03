@@ -20,7 +20,17 @@ def detect_nvenc_support() -> bool:
             ["ffmpeg", "-hide_banner", "-encoders"],
             capture_output=True, text=True, timeout=10,
         )
-        return "h264_nvenc" in result.stdout
+        if "h264_nvenc" not in result.stdout:
+            return False
+        probe = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
+                "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"
+            ],
+            capture_output=True, text=True, timeout=5,
+        )
+        return probe.returncode == 0
     except Exception:
         return False
 
@@ -377,8 +387,8 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
     result = subprocess.run(primary_cmd, capture_output=True, text=True, timeout=600)
 
     if result.returncode != 0:
-        encoding_params = get_encoding_params(parallelism)
-        if encoding_params.get("vcodec") == "h264_nvenc":
+        used_nvenc = "h264_nvenc" in primary_cmd or get_encoding_params(parallelism).get("vcodec") == "h264_nvenc"
+        if used_nvenc:
             logger.warning("NVENC falhou, desativando NVENC e utilizando CPU com múltiplas threads...")
             global _NVENC_AVAILABLE
             _NVENC_AVAILABLE = False
@@ -524,7 +534,9 @@ def re_render_clip(
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if res.returncode != 0:
-            if is_nvenc_available():
+            if "h264_nvenc" in cmd or is_nvenc_available():
+                global _NVENC_AVAILABLE
+                _NVENC_AVAILABLE = False
                 fallback_cmd = _ffmpeg_base() + [
                     "-i", input_clean_path,
                     *vf_arg,
