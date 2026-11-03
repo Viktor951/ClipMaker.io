@@ -38,7 +38,7 @@ class WordItem(BaseModel):
 
 class ReRenderRequest(BaseModel):
     words: List[WordItem] = Field(default_factory=list, max_length=5000)
-    style: Literal["Yellow", "Green", "White"] = "Yellow"
+    style: Literal["Yellow", "Green", "White", "Hormozi", "Neon", "Clean", "Cyberpunk"] = "Yellow"
     start_time: Optional[float] = Field(default=None, ge=0.0)
     end_time: Optional[float] = Field(default=None, gt=0.0)
     aspect_ratio: Literal["9:16", "1:1", "16:9"] = "9:16"
