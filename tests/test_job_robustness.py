@@ -178,3 +178,113 @@ def test_short_video_clip_generation_boundaries():
     assert target_count_long == 5
     assert min_dur_long == 60.0
     assert max_dur_long == 90.0
+
+
+@pytest.mark.asyncio
+async def test_watchdog_stale_pending_without_active_job():
+    """M02 (a): PENDING antigo (90 min) sem job ativo -> marcado FAILED pelo watchdog."""
+    from backend.app.db.db_service import PostgresBackend
+
+    db = await get_backend()
+    # Garante que não há job em execução ativa deixado por testes anteriores
+    await db.execute(
+        "UPDATE projects SET status = 'FAILED' WHERE status IN ('DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')"
+    )
+
+    user = await create_user_safe(f"m02a_{uuid.uuid4().hex[:8]}@test.com", "hash123")
+    user_id = str(user["id"])
+
+    project_id = await create_project(
+        user_id=user_id,
+        title="Pending Orfao Sem Job Ativo",
+        source_file_key="m02a.mp4",
+        duration_sec=30.0,
+        status="PENDING"
+    )
+
+    past_dt = (datetime.now(timezone.utc) - timedelta(minutes=90)).replace(tzinfo=None)
+    past_val = past_dt if isinstance(db, PostgresBackend) else past_dt.strftime("%Y-%m-%d %H:%M:%S")
+    await db.execute(
+        "UPDATE projects SET createdAt = $1, updatedAt = $2 WHERE id = $3",
+        past_val, past_val, project_id
+    )
+
+    affected = await fail_stale_projects(stale_minutes=60)
+    assert affected >= 1
+
+    updated = await get_project_with_clips(project_id)
+    assert updated["status"] == "FAILED"
+    assert updated["errormessage"] == "O processamento excedeu o tempo limite. Tente novamente."
+
+
+@pytest.mark.asyncio
+async def test_watchdog_stale_pending_with_active_job_and_queue_position():
+    """M02 (b): PENDING antigo (90 min) COM job ativo recente -> NÃO é marcado, e o queuePosition o conta corretamente."""
+    from backend.app.db.db_service import PostgresBackend, get_project_queue_info
+
+    db = await get_backend()
+    user = await create_user_safe(f"m02b_{uuid.uuid4().hex[:8]}@test.com", "hash123")
+    user_id = str(user["id"])
+
+    active_id = await create_project(
+        user_id=user_id,
+        title="Job Ativo Recente",
+        source_file_key="m02b_active.mp4",
+        duration_sec=120.0,
+        status="TRANSCRIBING"
+    )
+    pending_old_id = await create_project(
+        user_id=user_id,
+        title="Pending Antigo Aguardando",
+        source_file_key="m02b_pending.mp4",
+        duration_sec=60.0,
+        status="PENDING"
+    )
+    current_id = await create_project(
+        user_id=user_id,
+        title="Projeto Atual na Fila",
+        source_file_key="m02b_current.mp4",
+        duration_sec=30.0,
+        status="PENDING"
+    )
+
+    try:
+        now_utc = datetime.now(timezone.utc)
+        dt_active = (now_utc - timedelta(minutes=10)).replace(tzinfo=None)
+        dt_pending_old = (now_utc - timedelta(minutes=90)).replace(tzinfo=None)
+        dt_current = now_utc.replace(tzinfo=None)
+
+        def _fmt(dt_obj):
+            return dt_obj if isinstance(db, PostgresBackend) else dt_obj.strftime("%Y-%m-%d %H:%M:%S")
+
+        val_active = _fmt(dt_active)
+        val_pending_old = _fmt(dt_pending_old)
+        val_current = _fmt(dt_current)
+
+        await db.execute(
+            "UPDATE projects SET createdAt = $1, updatedAt = $2 WHERE id = $3",
+            val_active, val_active, active_id
+        )
+        await db.execute(
+            "UPDATE projects SET createdAt = $1, updatedAt = $2 WHERE id = $3",
+            val_pending_old, val_pending_old, pending_old_id
+        )
+        await db.execute(
+            "UPDATE projects SET createdAt = $1, updatedAt = $2 WHERE id = $3",
+            val_current, val_current, current_id
+        )
+
+        # Watchdog NÃO deve marcar o PENDING de 90 min pois existe job ativo atualizado há 10 min
+        await fail_stale_projects(stale_minutes=60)
+        pending_old_proj = await get_project_with_clips(pending_old_id)
+        assert pending_old_proj["status"] == "PENDING"
+
+        # queuePosition do projeto atual deve contar tanto o PENDING antigo quanto o job ativo recente
+        q_info = await get_project_queue_info(current_id)
+        assert q_info["queue_position"] >= 3
+    finally:
+        await db.execute(
+            "UPDATE projects SET status = 'FAILED' WHERE id IN ($1, $2, $3)",
+            active_id, pending_old_id, current_id
+        )
+
