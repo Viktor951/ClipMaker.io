@@ -11,7 +11,7 @@ load_dotenv()
 TARGET_CLIPS_COUNT = 5
 MIN_DURATION_SEC = 60
 MAX_DURATION_SEC = 90
-GEMINI_REQUEST_TIMEOUT_SEC = float(os.getenv("GEMINI_REQUEST_TIMEOUT_SEC", "15"))
+GEMINI_REQUEST_TIMEOUT_SEC = float(os.getenv("GEMINI_REQUEST_TIMEOUT_SEC", "8"))
 GEMINI_TOTAL_BUDGET_SEC = float(os.getenv("GEMINI_TOTAL_BUDGET_SEC", "20"))
 
 logger = logging.getLogger("clipmaker.ai")
@@ -274,7 +274,7 @@ TRANSCRIÇÃO DO VÍDEO:
 """
     
     # Modelos configuráveis via variável de ambiente GEMINI_MODELS
-    raw_models = os.getenv("GEMINI_MODELS", "gemini-3.8-flash,gemini-flash-latest,gemini-pro-latest")
+    raw_models = os.getenv("GEMINI_MODELS", "gemini-3.8-flash,gemini-3.6-flash,gemini-flash-lite-latest,gemini-flash-latest,gemini-pro-latest")
     models_to_try = [m.strip() for m in raw_models.split(",") if m.strip()]
     total_attempts = 0
     had_429 = False
