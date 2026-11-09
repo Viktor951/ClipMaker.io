@@ -332,7 +332,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
 def re_render_clip_task(clip_id: str, payload_dict: dict):
     from backend.app.core.loop import run_sync
     from backend.app.db.db_service import get_clip, get_project_with_clips, update_clip_render_details, update_clip_status
-    from backend.app.services.video_service import generate_srt_from_words, extract_and_crop_clip, re_render_clip
+    from backend.app.services.video_service import generate_srt_from_words, extract_and_crop_clip, re_render_clip, generate_thumbnail
     import uuid, shutil, json
 
     clip = run_sync(get_clip(clip_id))
@@ -434,6 +434,17 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
 
         if os.path.exists(temp_render_out):
             shutil.move(temp_render_out, output_path)
+
+        # Regenera a thumbnail correspondente ao novo formato e legendas
+        try:
+            thumb_filename = f"thumb_{clip_uuid}.jpg"
+            thumb_path = os.path.join(temp_dir, thumb_filename)
+            clip_dur = max(0.1, float(new_end) - float(new_start))
+            thumb_time = min(1.0, clip_dur / 2.0)
+            generate_thumbnail(output_path, thumb_time, thumb_path)
+            logger.info(f"Thumbnail regenerada para {thumb_filename} (aspect={aspect_ratio})")
+        except Exception as e_thumb:
+            logger.warning(f"Falha ao regenerar thumbnail no re-render: {e_thumb}")
 
         # Sucesso: atualiza dados e define status COMPLETED
         run_sync(update_clip_render_details(
