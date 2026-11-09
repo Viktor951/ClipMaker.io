@@ -13,6 +13,7 @@ build/
 # === Vídeos e mídia temporária ===
 *.webm
 *.mp4
+*.mov
 *.mkv
 *.avi
 *.srt

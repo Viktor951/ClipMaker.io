@@ -279,9 +279,11 @@ def process_video_full_pipeline(
             
             logger.info(f"[CLIPE {clip_num}] OK! Renderizado em {render_time:.1f}s -> {clip_filename}")
 
-            # Geração de thumbnail real do clipe (~1s)
+            # Geração de thumbnail real do clipe (~1s) a partir do clipe já recortado e legendado
             logger.info(f"[CLIPE {clip_num}] Gerando miniatura do clipe...")
-            video_service.generate_thumbnail(input_path, start_sec + 1.0, thumb_path)
+            clip_dur = max(0.1, end_sec - start_sec)
+            thumb_time = min(1.0, clip_dur / 2.0)
+            video_service.generate_thumbnail(output_path, thumb_time, thumb_path)
         except Exception as e:
             logger.exception(f"[CLIPE {clip_num}] Falha ao renderizar: {e}")
             raise RuntimeError(f"Falha na renderização do clipe {clip_num}.")

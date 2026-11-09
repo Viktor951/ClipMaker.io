@@ -332,7 +332,7 @@ def process_video_task(project_id: str, input_path: str, temp_dir: str, aspect_r
 def re_render_clip_task(clip_id: str, payload_dict: dict):
     from backend.app.core.loop import run_sync
     from backend.app.db.db_service import get_clip, get_project_with_clips, update_clip_render_details, update_clip_status
-    from backend.app.services.video_service import generate_srt_from_words, extract_and_crop_clip, re_render_clip
+    from backend.app.services.video_service import generate_srt_from_words, extract_and_crop_clip, re_render_clip, generate_thumbnail
     import uuid, shutil, json
 
     clip = run_sync(get_clip(clip_id))
@@ -383,8 +383,23 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
     temp_render_out = os.path.join(temp_dir, f"temp_render_{uuid.uuid4().hex}.mp4")
 
     try:
-        generate_srt_from_words(words, srt_path)
         has_source = bool(source_video_path and os.path.exists(source_video_path))
+        if has_source and words and abs(float(new_start) - current_start) > 0.05:
+            delta_start = current_start - float(new_start)
+            new_clip_dur = max(0.1, float(new_end) - float(new_start))
+            shifted_words = []
+            for w in words:
+                w_copy = dict(w)
+                s_val = round(float(w_copy.get("start", 0.0)) + delta_start, 3)
+                e_val = round(float(w_copy.get("end", 0.0)) + delta_start, 3)
+                if e_val <= 0.0 or s_val >= new_clip_dur:
+                    continue
+                w_copy["start"] = max(0.0, s_val)
+                w_copy["end"] = min(new_clip_dur, max(w_copy["start"] + 0.05, e_val))
+                shifted_words.append(w_copy)
+            words = shifted_words
+
+        generate_srt_from_words(words, srt_path)
         
         if has_source:
             logger.info(f"Re-renderizando clipe {clip_id} em passe único a partir do vídeo fonte: {source_video_path} (face_center_x={face_center_x})")
@@ -419,6 +434,17 @@ def re_render_clip_task(clip_id: str, payload_dict: dict):
 
         if os.path.exists(temp_render_out):
             shutil.move(temp_render_out, output_path)
+
+        # Regenera a thumbnail correspondente ao novo formato e legendas
+        try:
+            thumb_filename = f"thumb_{clip_uuid}.jpg"
+            thumb_path = os.path.join(temp_dir, thumb_filename)
+            clip_dur = max(0.1, float(new_end) - float(new_start))
+            thumb_time = min(1.0, clip_dur / 2.0)
+            generate_thumbnail(output_path, thumb_time, thumb_path)
+            logger.info(f"Thumbnail regenerada para {thumb_filename} (aspect={aspect_ratio})")
+        except Exception as e_thumb:
+            logger.warning(f"Falha ao regenerar thumbnail no re-render: {e_thumb}")
 
         # Sucesso: atualiza dados e define status COMPLETED
         run_sync(update_clip_render_details(

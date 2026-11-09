@@ -216,6 +216,7 @@ const UI = {
                         <div class="viral-badge ${scoreClass}">
                             <i class="fa-solid fa-fire"></i> ${Number(clip.viralScore || 0)}/100
                         </div>
+                        <div class="clip-ratio-badge">${escapeHtml(clip.aspectRatio || '9:16')}</div>
                         <div class="clip-duration">${escapeHtml(clip.duration || '')}</div>
                     </div>
                 </div>
@@ -409,9 +410,47 @@ const UI = {
             }
         };
 
+        const updateAspectUI = () => {
+            const selectedRatio = aspectSelect ? aspectSelect.value : (clip.aspectRatio || '9:16');
+            const clipRatio = clip.aspectRatio || '9:16';
+            updatePlayerAspect(selectedRatio);
+
+            const ratioNotice = document.getElementById('editor-ratio-notice');
+            const ratioBadge = document.getElementById('editor-ratio-badge');
+            const targetRatioText = document.getElementById('target-ratio-text');
+            const noticeTargetRatio = document.getElementById('notice-target-ratio');
+            const noticeCurrentRatio = document.getElementById('notice-current-ratio');
+            const noticeBtnRatio = document.getElementById('notice-btn-ratio');
+            const currentBtn = document.getElementById('btn-export-clip');
+
+            const isDifferentRatio = selectedRatio !== clipRatio;
+
+            if (isDifferentRatio) {
+                if (ratioNotice) ratioNotice.classList.remove('hidden');
+                if (ratioBadge) ratioBadge.classList.remove('hidden');
+                if (targetRatioText) targetRatioText.textContent = selectedRatio;
+                if (noticeTargetRatio) noticeTargetRatio.textContent = selectedRatio;
+                if (noticeCurrentRatio) noticeCurrentRatio.textContent = clipRatio;
+                if (noticeBtnRatio) noticeBtnRatio.textContent = selectedRatio;
+
+                if (currentBtn && !currentBtn.disabled) {
+                    currentBtn.classList.add('btn-highlight-render');
+                    currentBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Renderizar em ${selectedRatio} & Baixar`;
+                }
+            } else {
+                if (ratioNotice) ratioNotice.classList.add('hidden');
+                if (ratioBadge) ratioBadge.classList.add('hidden');
+
+                if (currentBtn && !currentBtn.disabled) {
+                    currentBtn.classList.remove('btn-highlight-render');
+                    currentBtn.innerHTML = `<i class="fa-solid fa-download"></i> Baixar / Exportar`;
+                }
+            }
+        };
+
         if (aspectSelect) {
             aspectSelect.onchange = () => {
-                updatePlayerAspect(aspectSelect.value);
+                updateAspectUI();
             };
         }
 
@@ -429,8 +468,19 @@ const UI = {
             `;
         } else {
             videoContainer.innerHTML = `
-                <div id="editor-video-wrapper" style="width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
+                <div id="editor-video-wrapper" style="position: relative; width: 100%; border-radius: var(--radius-md); overflow: hidden; background: #000; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); transition: aspect-ratio 0.3s ease;">
                     <video id="editor-video-player" src="${videoUrlSafe}" poster="${thumbnailUrlSafe}" style="width: 100%; height: 100%; object-fit: contain;" autoplay playsinline controls loop></video>
+                    <div id="editor-ratio-badge" class="editor-ratio-badge hidden">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                        <span>Re-renderização necessária para formato <b id="target-ratio-text">16:9</b></span>
+                    </div>
+                </div>
+                <div id="editor-ratio-notice" class="editor-ratio-notice hidden">
+                    <div class="ratio-notice-icon"><i class="fa-solid fa-wand-magic-sparkles"></i></div>
+                    <div class="ratio-notice-content">
+                        <strong>Formato selecionado: <span id="notice-target-ratio">16:9</span></strong>
+                        <p>O clipe atual está em <span id="notice-current-ratio">9:16</span>. Para recortar o vídeo original nessa proporção e reposicionar as legendas, clique em <b>Renderizar em <span id="notice-btn-ratio">16:9</span> & Baixar</b> abaixo.</p>
+                    </div>
                 </div>
             `;
             updatePlayerAspect(currentRatio);
@@ -524,14 +574,15 @@ const UI = {
             btnExport.parentNode.replaceChild(newBtn, btnExport);
 
             newBtn.addEventListener('click', async () => {
+                const targetRatio = document.getElementById('aspect-ratio-select')?.value || '9:16';
                 const originalText = newBtn.innerHTML;
-                newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Solicitando re-render...';
+                newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Solicitando renderização...';
                 newBtn.disabled = true;
 
                 const style = document.getElementById('caption-style-select').value || 'Yellow';
                 const trimStart = parseFloat(document.getElementById('trim-start').value || 0);
                 const trimEnd = parseFloat(document.getElementById('trim-end').value || 0);
-                const aspectRatio = document.getElementById('aspect-ratio-select').value || '9:16';
+                const aspectRatio = targetRatio;
                 const addSubtitles = document.getElementById('toggle-subtitles').checked;
                 const quality = document.getElementById('quality-select').value || '1080p';
 
@@ -562,7 +613,7 @@ const UI = {
                         throw new Error(errDetail);
                     }
 
-                    newBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Renderizando vídeo...';
+                    newBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Renderizando em ${aspectRatio}...`;
 
                     // Polling do status do clipe até COMPLETED
                     let pollSuccess = false;
@@ -579,6 +630,9 @@ const UI = {
                         }
                         if (statusData.status === 'FAILED') {
                             throw new Error(statusData.error || 'Falha durante o processamento do clipe.');
+                        }
+                        if (statusData.status === 'RENDERING') {
+                            newBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Renderizando em ${aspectRatio}... (${(attempt + 1) * 2}s)`;
                         }
                     }
 
@@ -598,20 +652,23 @@ const UI = {
                         .trim()
                         .replace(/\s+/g, '_');
                     triggerFileDownload(refreshedUrl, `${safeExportTitle}.mp4`);
-                    showToast('Exportação concluída! Download iniciado.', 'success');
+                    showToast(`Vídeo renderizado em ${aspectRatio} com sucesso! Download iniciado.`, 'success');
 
-                    // Recarregar preview
-                    const currentVideoEl = document.getElementById('editor-video-player');
-                    if (currentVideoEl) {
-                        currentVideoEl.src = refreshedUrl;
-                        currentVideoEl.play().catch(() => { });
-                    }
-
+                    // Atualiza dados no objeto clip
                     clip.captionConfig = style;
                     clip.aspectRatio = aspectRatio;
                     clip.startTime = trimStart;
                     clip.endTime = trimEnd;
-                    updatePlayerAspect(aspectRatio);
+                    clip.videoUrl = refreshedUrl;
+
+                    // Recarregar preview no player do editor
+                    const currentVideoEl = document.getElementById('editor-video-player');
+                    if (currentVideoEl) {
+                        currentVideoEl.src = refreshedUrl;
+                        currentVideoEl.poster = `${API_BASE}/projects/clip/${clipIdentifier}/thumbnail?t=${Date.now()}`;
+                        currentVideoEl.load();
+                        currentVideoEl.play().catch(() => { });
+                    }
 
                     // Atualiza o card de preview na listagem principal
                     const cardPreview = document.querySelector(`.clip-preview-container[data-id="${clipIdentifier}"]`);
@@ -626,15 +683,24 @@ const UI = {
                         if (cardVideo) {
                             cardVideo.src = refreshedUrl;
                             cardVideo.dataset.src = refreshedUrl;
+                            cardVideo.poster = `${API_BASE}/projects/clip/${clipIdentifier}/thumbnail?t=${Date.now()}`;
+                            cardVideo.load();
+                        }
+                        const ratioBadge = cardPreview.querySelector('.clip-ratio-badge');
+                        if (ratioBadge) {
+                            ratioBadge.textContent = aspectRatio;
                         }
                     }
                 } catch (err) {
                     showToast('Falha ao renderizar clipe: ' + err.message, 'error');
                 } finally {
-                    newBtn.innerHTML = originalText;
                     newBtn.disabled = false;
+                    updateAspectUI();
                 }
             });
+
+            // Atualiza o botão e badges de acordo com a proporção inicial
+            updateAspectUI();
         }
 
         modal.classList.remove('hidden');

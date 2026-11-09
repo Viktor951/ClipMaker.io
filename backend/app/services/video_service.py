@@ -20,7 +20,17 @@ def detect_nvenc_support() -> bool:
             ["ffmpeg", "-hide_banner", "-encoders"],
             capture_output=True, text=True, timeout=10,
         )
-        return "h264_nvenc" in result.stdout
+        if "h264_nvenc" not in result.stdout:
+            return False
+        probe = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.1",
+                "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"
+            ],
+            capture_output=True, text=True, timeout=5,
+        )
+        return probe.returncode == 0
     except Exception:
         return False
 
@@ -377,8 +387,8 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
     result = subprocess.run(primary_cmd, capture_output=True, text=True, timeout=600)
 
     if result.returncode != 0:
-        encoding_params = get_encoding_params(parallelism)
-        if encoding_params.get("vcodec") == "h264_nvenc":
+        used_nvenc = "h264_nvenc" in primary_cmd or get_encoding_params(parallelism).get("vcodec") == "h264_nvenc"
+        if used_nvenc:
             logger.warning("NVENC falhou, desativando NVENC e utilizando CPU com múltiplas threads...")
             global _NVENC_AVAILABLE
             _NVENC_AVAILABLE = False
@@ -400,6 +410,20 @@ def _run_ffmpeg_with_fallback(primary_cmd: list, filter_complex: str, start_sec:
                 raise RuntimeError(f"FFmpeg falhou com CPU. Erro:\n{result_cpu.stderr[-1000:]}")
         else:
             raise RuntimeError(f"FFmpeg falhou. Erro:\n{result.stderr[-1000:]}")
+
+
+def _get_subtitle_force_style(style_name: str) -> str:
+    """Retorna a string force_style do libass correspondente ao preset de legenda selecionado."""
+    presets = {
+        "Yellow": "FontName=Montserrat,FontSize=20,PrimaryColour=&H0000FFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1",
+        "Green": "FontName=Montserrat,FontSize=20,PrimaryColour=&H0000FF00&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1",
+        "White": "FontName=Montserrat,FontSize=20,PrimaryColour=&H00FFFFFF&,Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1",
+        "Hormozi": "FontName=Montserrat,FontSize=22,PrimaryColour=&H0000E6FF&,OutlineColour=&H00000000&,Alignment=2,Bold=1,MarginV=28,Outline=3,Shadow=2",
+        "Neon": "FontName=Montserrat,FontSize=22,PrimaryColour=&H0076F000&,OutlineColour=&H000D0A09&,Alignment=2,Bold=1,MarginV=28,Outline=3,Shadow=2",
+        "Clean": "FontName=Montserrat,FontSize=20,PrimaryColour=&H00FFFFFF&,OutlineColour=&H00000000&,Alignment=2,Bold=1,MarginV=28,Outline=1,Shadow=1",
+        "Cyberpunk": "FontName=Montserrat,FontSize=22,PrimaryColour=&H00FFFF00&,OutlineColour=&H00FF00FF&,Alignment=2,Bold=1,MarginV=28,Outline=3,Shadow=2",
+    }
+    return presets.get(style_name, presets["Yellow"])
 
 
 def render_clip(
@@ -426,13 +450,7 @@ def render_clip(
 
     encoding_params = get_encoding_params(parallelism)
     srt_escaped = escape_ffmpeg_path(srt_path) if srt_path else ""
-    colors = {
-        "Yellow": "&H0000FFFF&",
-        "Green": "&H0000FF00&",
-        "White": "&H00FFFFFF&"
-    }
-    color_code = colors.get(style_name, "&H0000FFFF&")
-    sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+    sub_style = _get_subtitle_force_style(style_name)
 
     filter_complex = f"[0:v]crop={target_crop_w}:{target_crop_h}:{crop_x}:{crop_y},scale={scale_w}:{scale_h}"
     if has_subtitles and srt_escaped and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
@@ -473,15 +491,8 @@ def re_render_clip(
 ) -> float:
     t1 = time.time()
     
-    colors = {
-        "Yellow": "&H0000FFFF&",
-        "Green": "&H0000FF00&",
-        "White": "&H00FFFFFF&"
-    }
-    color_code = colors.get(style_name, "&H0000FFFF&")
-    
     srt_escaped = escape_ffmpeg_path(srt_path) if srt_path else ""
-    sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+    sub_style = _get_subtitle_force_style(style_name)
     
     scale_filter = ""
     if quality == "720p":
@@ -523,7 +534,9 @@ def re_render_clip(
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         if res.returncode != 0:
-            if is_nvenc_available():
+            if "h264_nvenc" in cmd or is_nvenc_available():
+                global _NVENC_AVAILABLE
+                _NVENC_AVAILABLE = False
                 fallback_cmd = _ffmpeg_base() + [
                     "-i", input_clean_path,
                     *vf_arg,
@@ -575,10 +588,8 @@ def extract_and_crop_clip(
 
     has_valid_srt = bool(srt_path and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0)
     if add_subtitles and has_valid_srt:
-        colors = {"Yellow": "&H0000FFFF&", "Green": "&H0000FF00&", "White": "&H00FFFFFF&"}
-        color_code = colors.get(style_name, "&H0000FFFF&")
         srt_escaped = escape_ffmpeg_path(srt_path)
-        sub_style = f"FontName=Montserrat,FontSize=20,PrimaryColour={color_code},Alignment=2,Bold=1,MarginV=15,Outline=2,Shadow=1"
+        sub_style = _get_subtitle_force_style(style_name)
         filter_complex += f",subtitles='{srt_escaped}':force_style='{sub_style}'"
     filter_complex += "[v]"
     

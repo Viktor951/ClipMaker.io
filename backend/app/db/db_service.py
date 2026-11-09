@@ -508,6 +508,7 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
             LEFT JOIN clips c ON p.id = c.projectId
             WHERE p.userId = $1
               AND p.createdAt < (SELECT createdAt FROM projects WHERE id = $2)
+              AND NOT (p.status = 'FAILED' AND (p.title = 'Importação por URL' OR LOWER(p.errorMessage) LIKE '%baixar o vídeo%'))
             GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
             ORDER BY p.createdAt DESC
             LIMIT $3
@@ -529,6 +530,7 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
             FROM projects p
             LEFT JOIN clips c ON p.id = c.projectId
             WHERE p.userId = $1
+              AND NOT (p.status = 'FAILED' AND (p.title = 'Importação por URL' OR LOWER(p.errorMessage) LIKE '%baixar o vídeo%'))
             GROUP BY p.id, p.title, p.sourceUrl, p.durationSec, p.status, p.errorMessage, p.createdAt, p.updatedAt
             ORDER BY p.createdAt DESC
             LIMIT $2
@@ -539,10 +541,13 @@ async def get_user_projects(user_id: str, limit: int = 50, cursor: Optional[str]
     for r in rows:
         created_val = r.get("createdat") or r.get("createdAt")
         updated_val = r.get("updatedat") or r.get("updatedAt")
+        raw_title = r.get("title") or "Sem título"
+        if raw_title == "Importação por URL":
+            raw_title = "Vídeo Online"
         
         projects.append({
             "id": r.get("id"),
-            "title": r.get("title") or "Sem título",
+            "title": raw_title,
             "status": r.get("status"),
             "durationSec": float(r.get("durationsec") or 0.0),
             "clipCount": int(r.get("clipcount") or 0),
@@ -639,6 +644,7 @@ async def save_single_clip(project_id: str, clip: Dict[str, Any]):
         start_t, end_t, dur_s,
         clip.get('viralScore', 85), clip.get('aspectRatio', '9:16'), clip.get('renderedUrl', ''), 'COMPLETED', 'Yellow', words_json, thumb_key, face_cx
     )
+    await db.execute("UPDATE projects SET updatedAt = CURRENT_TIMESTAMP WHERE id = $1", project_id)
 
 
 async def set_project_ai_fallback(project_id: str, is_fallback: bool):
@@ -865,12 +871,22 @@ async def get_project_queue_info(project_id: str) -> Dict[str, Any]:
     if status in ("READY", "COMPLETED", "FAILED"):
         return {"queue_position": 0, "estimated_time_sec": 0}
 
+    from datetime import datetime, timezone, timedelta
+    stale_min = int(getattr(settings, "PROJECT_STALE_MINUTES", 60))
+    cutoff_dt = (datetime.now(timezone.utc) - timedelta(minutes=stale_min)).replace(tzinfo=None)
+    cutoff_val = cutoff_dt if isinstance(db, PostgresBackend) else cutoff_dt.strftime("%Y-%m-%d %H:%M:%S")
     created_at = proj.get("createdat") or proj.get("createdAt")
     row_pos = await db.fetchrow(
         """SELECT COUNT(*) as count FROM projects 
-           WHERE status IN ('PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')
-             AND createdAt < $1""",
-        created_at
+           WHERE createdAt < $1
+             AND (
+                 status = 'PENDING'
+                 OR (
+                     status IN ('DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')
+                     AND COALESCE(updatedAt, createdAt) >= $2
+                 )
+             )""",
+        created_at, cutoff_val
     )
     prior_count = int(row_pos["count"]) if row_pos else 0
     queue_position = prior_count + 1
@@ -908,8 +924,9 @@ async def record_job_metric(project_id: str, duration_sec: float, total_elapsed_
 
 async def fail_stale_projects(stale_minutes: int = 60) -> int:
     """
-    Watchdog: varre projetos com status ativos (DOWNLOADING, TRANSCRIBING, ANALYZING, RENDERING)
+    Watchdog: varre projetos com status ativos (PENDING, DOWNLOADING, TRANSCRIBING, ANALYZING, RENDERING)
     cujo updatedAt esteja estagnado há mais de stale_minutes e marca como FAILED com mensagem amigável.
+    Projetos PENDING só são marcados como órfãos quando não há nenhum job em execução ativa dentro da janela.
     Retorna a quantidade de projetos atualizados.
     """
     db = await get_backend()
@@ -917,7 +934,7 @@ async def fail_stale_projects(stale_minutes: int = 60) -> int:
     
     rows = await db.fetch(
         """SELECT id, status, updatedAt, createdAt FROM projects 
-           WHERE status IN ('DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')"""
+           WHERE status IN ('PENDING', 'DOWNLOADING', 'TRANSCRIBING', 'ANALYZING', 'RENDERING')"""
     )
     if not rows:
         return 0
@@ -925,7 +942,7 @@ async def fail_stale_projects(stale_minutes: int = 60) -> int:
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(minutes=stale_minutes)
-    stale_ids = []
+    parsed_rows = []
 
     for r in rows:
         raw_dt = r.get("updatedat") or r.get("createdat")
@@ -946,8 +963,17 @@ async def fail_stale_projects(stale_minutes: int = 60) -> int:
         else:
             parsed_dt = now
 
-        if parsed_dt < cutoff:
-            stale_ids.append(str(r["id"]))
+        parsed_rows.append((str(r["id"]), r.get("status"), parsed_dt))
+
+    has_active_running_job = any(
+        r_status != "PENDING" and r_dt >= cutoff
+        for _, r_status, r_dt in parsed_rows
+    )
+
+    stale_ids = [
+        r_id for r_id, r_status, r_dt in parsed_rows
+        if r_dt < cutoff and (r_status != "PENDING" or not has_active_running_job)
+    ]
 
     for pid in stale_ids:
         await db.execute(
